@@ -108,7 +108,7 @@ VERSION=${VERSION:-$DEFAULT_VERSION}
 DOMAIN="dev.${VERSION}.com"
 PROJECT_DIR="$HOME/Sites/${VERSION}"
 
-ok "Vou instalar Magento ${EDITION} ${VERSION} em https://${DOMAIN}/"
+ok "Vou instalar Magento ${EDITION} ${VERSION} em http://${DOMAIN}/"
 
 # ---------------------------------------------------------------------------
 # 5. Checar se ja existe outro ambiente rodando nas portas 80/443
@@ -160,11 +160,104 @@ bin/download "$EDITION" "$VERSION"
 #    adicionar o dominio local no /etc/hosts. Isso e esperado.
 # ---------------------------------------------------------------------------
 echo
-info "Instalando o Magento (containers, banco, cache, SSL local)..."
+info "Instalando o Magento (containers, banco, cache)..."
 bin/setup "$DOMAIN"
 
 # ---------------------------------------------------------------------------
-# 8. Dados de exemplo (sample data) -- sempre "sim", sem perguntar
+# 8. Deixar a loja em HTTP puro (sem SSL/HTTPS -- desnecessario para uma loja
+#    local). O bin/setup do docker-magento sempre configura HTTPS com um
+#    certificado local (mkcert) e a imagem de nginx redireciona toda porta 80
+#    para 443. Substituimos o server block de nginx por um compose.override.yaml
+#    (mecanismo de customizacao ja suportado pelo proprio docker-magento) que
+#    serve tudo direto em HTTP, sem redirecionamento nem certificado.
+# ---------------------------------------------------------------------------
+echo
+info "Configurando a loja para usar apenas HTTP (sem certificado SSL)..."
+cat > nginx-http.conf <<'NGINXCONF'
+upstream fastcgi_phpfpm {
+  server unix:/sock/phpfpm.sock;
+}
+
+upstream fastcgi_phpfpm_xdebug {
+  server unix:/sock/phpfpm-xdebug.sock;
+}
+
+map $cookie_XDEBUG_SESSION $fastcgi_backend {
+  default fastcgi_phpfpm;
+  PHPSTORM fastcgi_phpfpm_xdebug;
+}
+
+server {
+  listen [::]:8000;
+  listen 8000;
+
+  set $MAGE_ROOT /var/www/html;
+
+  fastcgi_buffer_size 64k;
+  fastcgi_buffers 8 128k;
+
+  location /livereload.js {
+    proxy_set_header Host $host;
+    proxy_pass http://phpfpm:35729/livereload.js;
+  }
+
+  location /livereload {
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+    proxy_pass http://phpfpm:35729/livereload;
+  }
+
+  include /var/www/html/nginx[.]conf;
+}
+NGINXCONF
+
+cat > compose.override.yaml <<'COMPOSEOVERRIDE'
+services:
+  app:
+    volumes:
+      - ./nginx-http.conf:/etc/nginx/conf.d/default.conf:cached
+COMPOSEOVERRIDE
+
+bin/restart
+
+echo "Ajustando URLs do Magento para HTTP..."
+bin/clinotty bin/magento config:set web/unsecure/base_url "http://${DOMAIN}/"
+bin/clinotty bin/magento config:set web/secure/base_url "http://${DOMAIN}/"
+bin/clinotty bin/magento config:set web/secure/use_in_frontend 0
+bin/clinotty bin/magento config:set web/secure/use_in_adminhtml 0
+
+echo "Desativando a autenticacao em duas etapas (2FA) do admin..."
+bin/clinotty bin/magento module:disable Magento_TwoFactorAuth Magento_AdminAdobeImsTwoFactorAuth
+
+bin/clinotty bin/magento cache:flush
+
+# ---------------------------------------------------------------------------
+# 9. Adicionar o dominio tambem no hosts do WINDOWS (nao so no do WSL)
+#    O /etc/hosts que o bin/setup edita e o do WSL -- so vale para comandos
+#    rodados dentro do proprio WSL. O navegador roda no Windows e usa o hosts
+#    do Windows, que e um arquivo separado. O Docker Desktop ja encaminha as
+#    portas 80/443 para o localhost do Windows automaticamente, entao so falta
+#    o Windows saber resolver o dominio.
+# ---------------------------------------------------------------------------
+if grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then
+  echo
+  info "Adicionando ${DOMAIN} no hosts do Windows..."
+  warn "Uma janela do Windows pode pedir permissao de administrador (UAC) -- clique em 'Sim'."
+  PS_CMD="if (-not (Select-String -Path 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Pattern '${DOMAIN}' -Quiet -SimpleMatch)) { Add-Content -Path 'C:\\Windows\\System32\\drivers\\etc\\hosts' -Value '127.0.0.1 ${DOMAIN}' }"
+  ENCODED_CMD=$(printf '%s' "$PS_CMD" | iconv -t UTF-16LE | base64 -w0)
+  if powershell.exe -NoProfile -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-EncodedCommand','$ENCODED_CMD'" >/dev/null 2>&1; then
+    ok "Dominio adicionado no hosts do Windows."
+  else
+    warn "Nao consegui adicionar automaticamente no hosts do Windows."
+    warn "Veja a secao 'Navegador nao encontra o site' no README.md para o passo manual."
+  fi
+else
+  warn "Nao encontrei o powershell.exe. Se estiver no Windows, adicione manualmente '${DOMAIN}' no hosts do Windows (veja o README.md)."
+fi
+
+# ---------------------------------------------------------------------------
+# 10. Dados de exemplo (sample data) -- sempre "sim", sem perguntar
 # ---------------------------------------------------------------------------
 echo
 info "Instalando dados de exemplo (produtos, categorias, clientes ficticios)..."
@@ -174,7 +267,7 @@ bin/clinotty bin/magento indexer:reindex
 bin/clinotty bin/magento cache:flush
 
 # ---------------------------------------------------------------------------
-# 9. Resumo final
+# 11. Resumo final
 # ---------------------------------------------------------------------------
 ADMIN_USER="$(grep -m1 '^MAGENTO_ADMIN_USER=' env/magento.env | cut -d= -f2)"
 ADMIN_PASSWORD="$(grep -m1 '^MAGENTO_ADMIN_PASSWORD=' env/magento.env | cut -d= -f2)"
@@ -182,10 +275,13 @@ ADMIN_PASSWORD="$(grep -m1 '^MAGENTO_ADMIN_PASSWORD=' env/magento.env | cut -d= 
 echo
 ok "Instalacao concluida!"
 echo
-echo "Loja:   https://${DOMAIN}/"
-echo "Admin:  https://${DOMAIN}/admin/"
+echo "Loja:   http://${DOMAIN}/"
+echo "Admin:  http://${DOMAIN}/admin/"
 echo "Usuario admin: ${ADMIN_USER}"
 echo "Senha admin:   ${ADMIN_PASSWORD}"
 echo
-echo "Se o navegador mostrar aviso de certificado inseguro, veja a secao"
-echo "'Certificado SSL nao confiavel' no README.md deste repositorio."
+echo "Login duplo (2FA) ja vem desativado -- basta usuario e senha para entrar no admin."
+echo
+info "Deixando voce na pasta do projeto (${PROJECT_DIR})..."
+cd "$PROJECT_DIR"
+exec "${SHELL:-bash}"

@@ -103,17 +103,19 @@ O script vai te pedir, na ordem, apenas estas informações (tudo o resto é aut
 2. **Geração de chave SSH** — o script cria uma chave SSH nova (se você ainda não tiver uma) e mostra a chave pública na tela. Copie essa chave e adicione em:
    👉 https://github.com/settings/keys → botão **"New SSH key"** → cole a chave → **Add SSH key**.
    Depois de adicionar, volte ao terminal e pressione **Enter** para o script continuar.
-3. **Versão do Magento** — edição (padrão: `community`) e versão (padrão: `2.4.8-p1`, mas você pode digitar outra, ex: `2.4.8`, `2.4.7-p3`, etc). O projeto é criado em `~/Sites/<versao>` (ex: `~/Sites/2.4.8-p1`) e o endereço da loja é gerado automaticamente a partir da versão, no formato `dev.<versao>.com` (ex: `https://dev.2.4.8-p1.com/`).
+3. **Versão do Magento** — edição (padrão: `community`) e versão (padrão: `2.4.8-p1`, mas você pode digitar outra, ex: `2.4.8`, `2.4.7-p3`, etc). O projeto é criado em `~/Sites/<versao>` (ex: `~/Sites/2.4.8-p1`) e o endereço da loja é gerado automaticamente a partir da versão, no formato `dev.<versao>.com` (ex: `http://dev.2.4.8-p1.com/`).
 4. **Chaves da Adobe Commerce Marketplace** — só na **primeira vez** que você instalar qualquer versão nesta máquina, o instalador do Magento vai pedir uma **Public key** e uma **Private key**. Veja a seção abaixo se você ainda não tem essas chaves. Em instalações seguintes (outras versões), isso não é pedido de novo — fica salvo automaticamente.
 
-Durante o processo, o Linux também pode pedir sua senha (`sudo`) uma vez, para adicionar o domínio local no arquivo `/etc/hosts` — isso é esperado, é só digitar a mesma senha do passo 1.1 (não aparece nada na tela enquanto digita).
+Durante o processo, o Linux também pode pedir sua senha (`sudo`) uma vez, para adicionar o domínio local no arquivo `/etc/hosts` do WSL — isso é esperado, é só digitar a mesma senha do passo 1.1 (não aparece nada na tela enquanto digita).
 
-Depois disso, o script cuida sozinho de: baixar o Magento, subir os containers Docker, instalar o banco de dados, configurar cache/SSL local, instalar dados de exemplo (produtos, categorias e clientes fictícios) e deixar tudo pronto para uso. Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
+Logo em seguida, o script também tenta adicionar o mesmo domínio no **hosts do Windows** (arquivo separado do hosts do WSL — o navegador roda no Windows e só enxerga esse). Para isso, uma janela do Windows pode pedir permissão de administrador (**UAC**) — clique em **"Sim"**. Sem esse passo, o navegador não vai encontrar o site (erro `DNS_PROBE_FINISHED_NXDOMAIN`), mesmo com tudo instalado corretamente.
 
-Ao final, o script mostra na tela:
-- O endereço da loja (ex: `https://dev.2.4.8-p1.com/`)
-- O endereço do admin (ex: `https://dev.2.4.8-p1.com/admin/`)
-- O usuário e senha de admin gerados
+Depois disso, o script cuida sozinho de: baixar o Magento, subir os containers Docker, instalar o banco de dados, configurar cache, deixar a loja acessível em **HTTP puro** (sem HTTPS/certificado — desnecessário para uma loja local), desativar o **login em duas etapas (2FA)** do admin (senão você não conseguiria entrar sem configurar um app autenticador) e instalar dados de exemplo (produtos, categorias e clientes fictícios). Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
+
+Ao final, o script mostra na tela o endereço da loja, do admin e as credenciais, e **deixa seu terminal já dentro da pasta do projeto** (`~/Sites/<versao>`), pronto para usar comandos como `bin/magento` sem precisar dar `cd` manualmente:
+- O endereço da loja (ex: `http://dev.2.4.8-p1.com/`)
+- O endereço do admin (ex: `http://dev.2.4.8-p1.com/admin/`)
+- O usuário e senha de admin gerados (login simples, sem 2FA)
 
 ### 2.4. Como conseguir as chaves da Adobe Commerce Marketplace
 
@@ -154,19 +156,22 @@ Siga o passo 1.4 para aumentar a memória do Docker/WSL e rode `wsl --shutdown` 
 **Erro de porta 80/443 já em uso (ou o script avisa que outro ambiente está rodando)**
 Isso acontece quando você já tem outra versão do Magento instalada e ligada ao mesmo tempo. Só um ambiente pode usar as portas 80/443 por vez. O `install.sh` detecta isso sozinho e avisa antes de continuar; se quiser resolver manualmente, entre na pasta da versão antiga (`~/Sites/<versao-antiga>`) e rode `bin/stop` antes de instalar/ligar outra versão.
 
-**Navegador mostra aviso de certificado inseguro/não confiável**
-Isso é esperado na primeira vez, pois o certificado SSL é gerado localmente (autoassinado). Duas opções:
-- Clique em "Avançado" → "Continuar mesmo assim" no aviso do navegador (mais simples, mas o aviso reaparece em outros navegadores).
-- Para remover o aviso definitivamente, importe o certificado raiz gerado pelo `mkcert` no Windows: dentro do Ubuntu rode `mkcert -CAROOT` para achar o caminho do arquivo `rootCA.pem`, copie esse arquivo para o Windows (ele fica acessível em `\\wsl.localhost\Ubuntu-26.04\...`) e importe-o em **Autoridades de Certificação Raiz Confiáveis** pelo `certmgr.msc` do Windows.
-
 **Erro de autenticação da Adobe Commerce Marketplace (401/403 ao baixar pacotes)**
 Confira se copiou a Public key e a Private key corretamente (sem espaços extras) em https://commercemarketplace.adobe.com/customer/accessKeys/. Se necessário, gere um novo par de chaves e rode `./install.sh` novamente.
 
+**Navegador não encontra o site (`DNS_PROBE_FINISHED_NXDOMAIN` ou "Não é possível acessar esse site")**
+O `install.sh` edita dois arquivos de hosts diferentes: o do WSL (usado só por comandos rodados dentro do Ubuntu) e o do Windows (usado pelo navegador). Se o passo automático do Windows falhar (ou você tiver pulado a janela de permissão de administrador), adicione manualmente:
+1. Abra o **Bloco de Notas como Administrador** (pesquise "Bloco de Notas" no menu Iniciar, clique com o botão direito → "Executar como administrador").
+2. Arquivo → Abrir → digite `C:\Windows\System32\drivers\etc\hosts` (troque o filtro de tipo de arquivo para "Todos os arquivos").
+3. Adicione uma linha no final: `127.0.0.1 dev.<versao>.com` (ex: `127.0.0.1 dev.2.4.8-p1.com`).
+4. Salve e recarregue a página no navegador.
+
 **Depois de reiniciar o WSL/PC, o site para de abrir (domínio não resolve)**
-O `/etc/hosts` do WSL é regenerado automaticamente a cada reinício, o que pode apagar a linha do seu domínio. Adicione-a de novo com:
+Tanto o `/etc/hosts` do WSL quanto (mais raramente) o hosts do Windows podem perder a entrada depois de reiniciar. No WSL, adicione de novo com:
 ```bash
 echo "127.0.0.1 ::1 dev.<versao>.com" | sudo tee -a /etc/hosts
 ```
+Se o navegador continuar sem encontrar o site, siga também o passo manual do Windows descrito no item acima.
 
 **Erro ao subir os containers mencionando "mount" ou "mountpoint" (grunt-config.json ou similar)**
 É uma instabilidade conhecida do Docker Desktop com WSL2 ao recriar containers. Normalmente resolve rodando de novo:
