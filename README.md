@@ -104,7 +104,9 @@ O script vai te pedir, na ordem, apenas estas informações (tudo o resto é aut
    👉 https://github.com/settings/keys → botão **"New SSH key"** → cole a chave → **Add SSH key**.
    Depois de adicionar, volte ao terminal e pressione **Enter** para o script continuar.
 3. **Versão do Magento** — edição (padrão: `community`) e versão (padrão: `2.4.8-p1`, mas você pode digitar outra, ex: `2.4.8`, `2.4.7-p3`, etc). O projeto é criado em `~/Sites/<versao>` (ex: `~/Sites/2.4.8-p1`) e o endereço da loja é gerado automaticamente a partir da versão, no formato `dev.<versao>.com` (ex: `https://dev.2.4.8-p1.com/`).
-4. **Chaves da Adobe Commerce Marketplace** — o próprio instalador do Magento vai pedir uma **Public key** e uma **Private key**. Veja a seção abaixo se você ainda não tem essas chaves.
+4. **Chaves da Adobe Commerce Marketplace** — só na **primeira vez** que você instalar qualquer versão nesta máquina, o instalador do Magento vai pedir uma **Public key** e uma **Private key**. Veja a seção abaixo se você ainda não tem essas chaves. Em instalações seguintes (outras versões), isso não é pedido de novo — fica salvo automaticamente.
+
+Durante o processo, o Linux também pode pedir sua senha (`sudo`) uma vez, para adicionar o domínio local no arquivo `/etc/hosts` — isso é esperado, é só digitar a mesma senha do passo 1.1 (não aparece nada na tela enquanto digita).
 
 Depois disso, o script cuida sozinho de: baixar o Magento, subir os containers Docker, instalar o banco de dados, configurar cache/SSL local, instalar dados de exemplo (produtos, categorias e clientes fictícios) e deixar tudo pronto para uso. Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
 
@@ -159,6 +161,19 @@ Isso é esperado na primeira vez, pois o certificado SSL é gerado localmente (a
 
 **Erro de autenticação da Adobe Commerce Marketplace (401/403 ao baixar pacotes)**
 Confira se copiou a Public key e a Private key corretamente (sem espaços extras) em https://commercemarketplace.adobe.com/customer/accessKeys/. Se necessário, gere um novo par de chaves e rode `./install.sh` novamente.
+
+**Depois de reiniciar o WSL/PC, o site para de abrir (domínio não resolve)**
+O `/etc/hosts` do WSL é regenerado automaticamente a cada reinício, o que pode apagar a linha do seu domínio. Adicione-a de novo com:
+```bash
+echo "127.0.0.1 ::1 dev.<versao>.com" | sudo tee -a /etc/hosts
+```
+
+**Erro ao subir os containers mencionando "mount" ou "mountpoint" (grunt-config.json ou similar)**
+É uma instabilidade conhecida do Docker Desktop com WSL2 ao recriar containers. Normalmente resolve rodando de novo:
+```bash
+bin/restart
+```
+Se persistir, feche o Docker Desktop, abra de novo e tente uma vez mais.
 
 **Quero recomeçar do zero**
 Apague a pasta do projeto (`~/Sites/<versao>`) e rode `./install.sh` de novo a partir da pasta deste repositório.

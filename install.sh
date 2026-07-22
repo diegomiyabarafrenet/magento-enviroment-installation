@@ -9,7 +9,7 @@
 #
 set -euo pipefail
 
-DOCKER_MAGENTO_REPO="https://github.com/markshust/docker-magento.git"
+DOCKER_MAGENTO_TEMPLATE_URL="https://raw.githubusercontent.com/markshust/docker-magento/master/lib/template"
 DEFAULT_EDITION="community"
 DEFAULT_VERSION="2.4.8-p1"
 
@@ -71,8 +71,16 @@ echo
 info "Chave SSH para o GitHub"
 SSH_KEY="$HOME/.ssh/id_ed25519"
 
-if [ -f "$SSH_KEY" ]; then
-  ok "Ja existe uma chave SSH em $SSH_KEY (de uma instalacao anterior), nenhuma acao necessaria."
+EXISTING_SSH_KEY=""
+for k in id_ed25519 id_rsa id_ecdsa id_dsa; do
+  if [ -f "$HOME/.ssh/$k" ]; then
+    EXISTING_SSH_KEY="$HOME/.ssh/$k"
+    break
+  fi
+done
+
+if [ -n "$EXISTING_SSH_KEY" ]; then
+  ok "Ja existe uma chave SSH em $EXISTING_SSH_KEY, nenhuma acao necessaria."
 else
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   ssh-keygen -t ed25519 -C "${CURRENT_EMAIL:-${GIT_EMAIL:-}}" -f "$SSH_KEY" -N ""
@@ -118,30 +126,38 @@ if [ -n "$RUNNING_ON_PORTS" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Clonar o docker-magento oficial (markshust) e baixar o Magento
+# 6. Criar o projeto a partir do template oficial do docker-magento (markshust)
+#    e baixar o Magento. Nota: o docker-magento nao se clona mais direto com
+#    "git clone" -- ele usa um sparse-checkout da pasta compose/ do repo, por
+#    isso reproduzimos aqui o mesmo passo do lib/onelinesetup oficial.
 #    (a partir daqui, tudo automatico -- exceto o prompt de chaves da Adobe
-#    Commerce Marketplace, que o proprio docker-magento faz em bin/download)
+#    Commerce Marketplace, que o proprio docker-magento faz em bin/download;
+#    esse prompt so aparece na primeira instalacao desta maquina, depois fica
+#    salvo globalmente em ~/.composer/auth.json e e reaproveitado sempre)
 # ---------------------------------------------------------------------------
 echo
-info "Clonando docker-magento (markshust) em ${PROJECT_DIR}..."
+info "Criando o projeto em ${PROJECT_DIR}..."
 mkdir -p "$(dirname "$PROJECT_DIR")"
 
 if [ -d "$PROJECT_DIR" ]; then
   die "A pasta ${PROJECT_DIR} ja existe. Remova-a ou escolha outra versao antes de rodar de novo."
 fi
 
-git clone "$DOCKER_MAGENTO_REPO" "$PROJECT_DIR"
+mkdir -p "$PROJECT_DIR"
 cd "$PROJECT_DIR"
+curl -s "$DOCKER_MAGENTO_TEMPLATE_URL" | bash
 
 echo
 info "Baixando o Magento ${EDITION} ${VERSION} via Composer..."
-warn "Agora o instalador vai pedir suas chaves (Public key / Private key) da Adobe Commerce Marketplace."
+warn "Na primeira instalacao nesta maquina, o instalador vai pedir suas chaves (Public key / Private key) da Adobe Commerce Marketplace."
 warn "Se voce ainda nao tem uma conta, veja o passo a passo no README.md deste repositorio (secao 'Adobe Commerce Marketplace')."
 echo
 bin/download "$EDITION" "$VERSION"
 
 # ---------------------------------------------------------------------------
 # 7. Subir os containers e instalar o Magento (100% automatico)
+#    Nota: este passo pode pedir a senha do Linux (sudo) uma unica vez, para
+#    adicionar o dominio local no /etc/hosts. Isso e esperado.
 # ---------------------------------------------------------------------------
 echo
 info "Instalando o Magento (containers, banco, cache, SSL local)..."
@@ -152,8 +168,7 @@ bin/setup "$DOMAIN"
 # ---------------------------------------------------------------------------
 echo
 info "Instalando dados de exemplo (produtos, categorias, clientes ficticios)..."
-bin/clinotty bin/magento sample-data:deploy
-bin/clinotty composer update --no-interaction
+bin/clinotty bin/magento sampledata:deploy
 bin/clinotty bin/magento setup:upgrade
 bin/clinotty bin/magento indexer:reindex
 bin/clinotty bin/magento cache:flush
