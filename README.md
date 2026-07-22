@@ -10,6 +10,33 @@ O processo tem 2 partes:
 
 ---
 
+## Já tenho um ambiente instalado, quero instalar outra versão do Magento
+
+Se você já rodou este tutorial antes (já tem WSL2 + Ubuntu + Docker Desktop funcionando), **não precisa repetir a Parte 1**. Basta:
+
+1. Abrir o Ubuntu (a mesma distro que você já usa).
+2. Se algum outro ambiente Magento estiver ligado, pare-o primeiro (só um ambiente pode usar as portas 80/443 por vez):
+   ```bash
+   cd ~/Sites/dev.<versao-antiga>.com
+   bin/stop
+   ```
+3. Ir até a pasta onde você clonou este repositório e atualizar:
+   ```bash
+   cd magento-enviroment-installation
+   git pull
+   ./install.sh
+   ```
+
+Como o `git` e a chave SSH já estão configurados da primeira vez, o script **pula essas etapas automaticamente** e pergunta só:
+- A edição e a versão do novo Magento que você quer instalar.
+- As chaves da Adobe Commerce Marketplace (o instalador do Magento sempre confirma isso; se você já autenticou antes na mesma máquina, ele também pula esse passo sozinho).
+
+A nova versão fica instalada em uma pasta separada (`~/Sites/dev.<nova-versao>.com`), sem afetar as versões que você já tinha instaladas antes.
+
+> **Importante:** os ambientes não ficam ligados ao mesmo tempo automaticamente — cada um usa as portas 80/443 do Docker. Para alternar entre versões já instaladas, use `bin/stop` na pasta da versão que quer desligar e `bin/start` na pasta da versão que quer usar.
+
+---
+
 ## Parte 1 — Preparar o Windows
 
 ### 1.1. Instalar o WSL2 + Ubuntu
@@ -144,6 +171,9 @@ Volte no passo 1.3 e confirme que a distro `Ubuntu-26.04` está marcada em Setti
 
 **Erro de memória insuficiente (menos de 6GB)**
 Siga o passo 1.4 para aumentar a memória do Docker/WSL e rode `wsl --shutdown` no PowerShell antes de tentar de novo.
+
+**Erro de porta 80/443 já em uso (ou o script avisa que outro ambiente está rodando)**
+Isso acontece quando você já tem outra versão do Magento instalada e ligada ao mesmo tempo. Só um ambiente pode usar as portas 80/443 por vez. Entre na pasta da versão antiga (`~/Sites/dev.<versao-antiga>.com`) e rode `bin/stop` antes de instalar/ligar outra versão.
 
 **Navegador mostra aviso de certificado inseguro/não confiável**
 Isso é esperado na primeira vez, pois o certificado SSL é gerado localmente (autoassinado). Duas opções:

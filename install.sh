@@ -3,6 +3,10 @@
 # Instalador de ambiente Magento (WSL2 + Docker + markshust/docker-magento).
 # Rode este script de dentro do Ubuntu (WSL2), nunca no PowerShell/CMD do Windows.
 #
+# Pode ser rodado varias vezes na mesma distro WSL para instalar versoes
+# diferentes do Magento lado a lado (cada versao ganha sua propria pasta em
+# ~/Sites). Configuracoes ja feitas (git, chave SSH) nao sao pedidas de novo.
+#
 set -euo pipefail
 
 DOCKER_MAGENTO_REPO="https://github.com/markshust/docker-magento.git"
@@ -68,19 +72,19 @@ info "Chave SSH para o GitHub"
 SSH_KEY="$HOME/.ssh/id_ed25519"
 
 if [ -f "$SSH_KEY" ]; then
-  ok "Ja existe uma chave SSH em $SSH_KEY, vou reaproveitar."
+  ok "Ja existe uma chave SSH em $SSH_KEY (de uma instalacao anterior), nenhuma acao necessaria."
 else
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   ssh-keygen -t ed25519 -C "${CURRENT_EMAIL:-${GIT_EMAIL:-}}" -f "$SSH_KEY" -N ""
-fi
 
-echo
-warn "Copie a chave publica abaixo e adicione na sua conta do GitHub em:"
-warn "https://github.com/settings/keys  (botao 'New SSH key')"
-echo
-cat "$SSH_KEY.pub"
-echo
-read -r -p "Depois de adicionar a chave no GitHub, pressione Enter para continuar... " _
+  echo
+  warn "Copie a chave publica abaixo e adicione na sua conta do GitHub em:"
+  warn "https://github.com/settings/keys  (botao 'New SSH key')"
+  echo
+  cat "$SSH_KEY.pub"
+  echo
+  read -r -p "Depois de adicionar a chave no GitHub, pressione Enter para continuar... " _
+fi
 
 # ---------------------------------------------------------------------------
 # 4. Versao do Magento (unica interacao obrigatoria nº3)
@@ -99,7 +103,22 @@ PROJECT_DIR="$HOME/Sites/${DOMAIN}"
 ok "Vou instalar Magento ${EDITION} ${VERSION} em https://${DOMAIN}/"
 
 # ---------------------------------------------------------------------------
-# 5. Clonar o docker-magento oficial (markshust) e baixar o Magento
+# 5. Checar se ja existe outro ambiente rodando nas portas 80/443
+#    (so um ambiente docker-magento pode ficar de pe por vez nessas portas,
+#    mesmo instalando varias versoes na mesma distro WSL)
+# ---------------------------------------------------------------------------
+RUNNING_ON_PORTS="$(docker ps --filter "publish=80" --filter "publish=443" --format '{{.Names}}' 2>/dev/null | sort -u || true)"
+if [ -n "$RUNNING_ON_PORTS" ]; then
+  echo
+  warn "Ja existe um ambiente Magento rodando e usando as portas 80/443:"
+  warn "$RUNNING_ON_PORTS"
+  warn "So um ambiente pode ficar ligado por vez nessas portas."
+  warn "Va na pasta do projeto antigo (~/Sites/dev.<versao-antiga>.com) e rode 'bin/stop' antes de continuar."
+  read -r -p "Ja parou o ambiente antigo? Pressione Enter para continuar, ou Ctrl+C para cancelar... " _
+fi
+
+# ---------------------------------------------------------------------------
+# 6. Clonar o docker-magento oficial (markshust) e baixar o Magento
 #    (a partir daqui, tudo automatico -- exceto o prompt de chaves da Adobe
 #    Commerce Marketplace, que o proprio docker-magento faz em bin/download)
 # ---------------------------------------------------------------------------
@@ -122,14 +141,14 @@ echo
 bin/download "$EDITION" "$VERSION"
 
 # ---------------------------------------------------------------------------
-# 6. Subir os containers e instalar o Magento (100% automatico)
+# 7. Subir os containers e instalar o Magento (100% automatico)
 # ---------------------------------------------------------------------------
 echo
 info "Instalando o Magento (containers, banco, cache, SSL local)..."
 bin/setup "$DOMAIN"
 
 # ---------------------------------------------------------------------------
-# 7. Dados de exemplo (sample data) -- sempre "sim", sem perguntar
+# 8. Dados de exemplo (sample data) -- sempre "sim", sem perguntar
 # ---------------------------------------------------------------------------
 echo
 info "Instalando dados de exemplo (produtos, categorias, clientes ficticios)..."
@@ -140,7 +159,7 @@ bin/clinotty bin/magento indexer:reindex
 bin/clinotty bin/magento cache:flush
 
 # ---------------------------------------------------------------------------
-# 8. Resumo final
+# 9. Resumo final
 # ---------------------------------------------------------------------------
 ADMIN_USER="$(grep -m1 '^MAGENTO_ADMIN_USER=' env/magento.env | cut -d= -f2)"
 ADMIN_PASSWORD="$(grep -m1 '^MAGENTO_ADMIN_PASSWORD=' env/magento.env | cut -d= -f2)"
