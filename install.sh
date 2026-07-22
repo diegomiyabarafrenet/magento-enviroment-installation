@@ -98,7 +98,7 @@ read -r -p "Versao do Magento (padrao: ${DEFAULT_VERSION}): " VERSION
 VERSION=${VERSION:-$DEFAULT_VERSION}
 
 DOMAIN="dev.${VERSION}.com"
-PROJECT_DIR="$HOME/Sites/${DOMAIN}"
+PROJECT_DIR="$HOME/Sites/${VERSION}"
 
 ok "Vou instalar Magento ${EDITION} ${VERSION} em https://${DOMAIN}/"
 
@@ -113,7 +113,7 @@ if [ -n "$RUNNING_ON_PORTS" ]; then
   warn "Ja existe um ambiente Magento rodando e usando as portas 80/443:"
   warn "$RUNNING_ON_PORTS"
   warn "So um ambiente pode ficar ligado por vez nessas portas."
-  warn "Va na pasta do projeto antigo (~/Sites/dev.<versao-antiga>.com) e rode 'bin/stop' antes de continuar."
+  warn "Va na pasta do projeto antigo (~/Sites/<versao-antiga>) e rode 'bin/stop' antes de continuar."
   read -r -p "Ja parou o ambiente antigo? Pressione Enter para continuar, ou Ctrl+C para cancelar... " _
 fi
 

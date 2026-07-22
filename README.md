@@ -8,36 +8,13 @@ O processo tem 2 partes:
 - **Parte 1** é feita no Windows (PowerShell + Docker Desktop).
 - **Parte 2** é feita dentro do Ubuntu (que vai rodar dentro do Windows via WSL2), e é onde o script `install.sh` faz praticamente tudo sozinho.
 
----
-
-## Já tenho um ambiente instalado, quero instalar outra versão do Magento
-
-Se você já rodou este tutorial antes (já tem WSL2 + Ubuntu + Docker Desktop funcionando), **não precisa repetir a Parte 1**. Basta:
-
-1. Abrir o Ubuntu (a mesma distro que você já usa).
-2. Se algum outro ambiente Magento estiver ligado, pare-o primeiro (só um ambiente pode usar as portas 80/443 por vez):
-   ```bash
-   cd ~/Sites/dev.<versao-antiga>.com
-   bin/stop
-   ```
-3. Ir até a pasta onde você clonou este repositório e atualizar:
-   ```bash
-   cd magento-enviroment-installation
-   git pull
-   ./install.sh
-   ```
-
-Como o `git` e a chave SSH já estão configurados da primeira vez, o script **pula essas etapas automaticamente** e pergunta só:
-- A edição e a versão do novo Magento que você quer instalar.
-- As chaves da Adobe Commerce Marketplace (o instalador do Magento sempre confirma isso; se você já autenticou antes na mesma máquina, ele também pula esse passo sozinho).
-
-A nova versão fica instalada em uma pasta separada (`~/Sites/dev.<nova-versao>.com`), sem afetar as versões que você já tinha instaladas antes.
-
-> **Importante:** os ambientes não ficam ligados ao mesmo tempo automaticamente — cada um usa as portas 80/443 do Docker. Para alternar entre versões já instaladas, use `bin/stop` na pasta da versão que quer desligar e `bin/start` na pasta da versão que quer usar.
+O `install.sh` pode ser rodado quantas vezes forem necessárias, mesmo depois de já ter uma versão do Magento instalada: ele **detecta sozinho** o que já está configurado (git, chave SSH, outro ambiente rodando nas portas 80/443) e pula essas etapas automaticamente, pedindo só o que ainda falta.
 
 ---
 
 ## Parte 1 — Preparar o Windows
+
+> Se você já fez esta parte antes (em outra instalação), pode pular direto para a **Parte 2**.
 
 ### 1.1. Instalar o WSL2 + Ubuntu
 
@@ -126,7 +103,7 @@ O script vai te pedir, na ordem, apenas estas informações (tudo o resto é aut
 2. **Geração de chave SSH** — o script cria uma chave SSH nova (se você ainda não tiver uma) e mostra a chave pública na tela. Copie essa chave e adicione em:
    👉 https://github.com/settings/keys → botão **"New SSH key"** → cole a chave → **Add SSH key**.
    Depois de adicionar, volte ao terminal e pressione **Enter** para o script continuar.
-3. **Versão do Magento** — edição (padrão: `community`) e versão (padrão: `2.4.8-p1`, mas você pode digitar outra, ex: `2.4.8`, `2.4.7-p3`, etc). O endereço da loja é gerado automaticamente a partir da versão, no formato `dev.<versao>.com` (ex: `https://dev.2.4.8-p1.com/`).
+3. **Versão do Magento** — edição (padrão: `community`) e versão (padrão: `2.4.8-p1`, mas você pode digitar outra, ex: `2.4.8`, `2.4.7-p3`, etc). O projeto é criado em `~/Sites/<versao>` (ex: `~/Sites/2.4.8-p1`) e o endereço da loja é gerado automaticamente a partir da versão, no formato `dev.<versao>.com` (ex: `https://dev.2.4.8-p1.com/`).
 4. **Chaves da Adobe Commerce Marketplace** — o próprio instalador do Magento vai pedir uma **Public key** e uma **Private key**. Veja a seção abaixo se você ainda não tem essas chaves.
 
 Depois disso, o script cuida sozinho de: baixar o Magento, subir os containers Docker, instalar o banco de dados, configurar cache/SSL local, instalar dados de exemplo (produtos, categorias e clientes fictícios) e deixar tudo pronto para uso. Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
@@ -149,7 +126,7 @@ Essas chaves são gratuitas e servem para o Composer conseguir baixar os arquivo
 
 ## Comandos úteis depois de instalado
 
-Dentro da pasta do projeto (`~/Sites/dev.<versao>.com`):
+Dentro da pasta do projeto (`~/Sites/<versao>`, ex: `~/Sites/2.4.8-p1`):
 
 | Comando | O que faz |
 |---|---|
@@ -173,7 +150,7 @@ Volte no passo 1.3 e confirme que a distro `Ubuntu-26.04` está marcada em Setti
 Siga o passo 1.4 para aumentar a memória do Docker/WSL e rode `wsl --shutdown` no PowerShell antes de tentar de novo.
 
 **Erro de porta 80/443 já em uso (ou o script avisa que outro ambiente está rodando)**
-Isso acontece quando você já tem outra versão do Magento instalada e ligada ao mesmo tempo. Só um ambiente pode usar as portas 80/443 por vez. Entre na pasta da versão antiga (`~/Sites/dev.<versao-antiga>.com`) e rode `bin/stop` antes de instalar/ligar outra versão.
+Isso acontece quando você já tem outra versão do Magento instalada e ligada ao mesmo tempo. Só um ambiente pode usar as portas 80/443 por vez. O `install.sh` detecta isso sozinho e avisa antes de continuar; se quiser resolver manualmente, entre na pasta da versão antiga (`~/Sites/<versao-antiga>`) e rode `bin/stop` antes de instalar/ligar outra versão.
 
 **Navegador mostra aviso de certificado inseguro/não confiável**
 Isso é esperado na primeira vez, pois o certificado SSL é gerado localmente (autoassinado). Duas opções:
@@ -184,4 +161,4 @@ Isso é esperado na primeira vez, pois o certificado SSL é gerado localmente (a
 Confira se copiou a Public key e a Private key corretamente (sem espaços extras) em https://commercemarketplace.adobe.com/customer/accessKeys/. Se necessário, gere um novo par de chaves e rode `./install.sh` novamente.
 
 **Quero recomeçar do zero**
-Apague a pasta do projeto (`~/Sites/dev.<versao>.com`) e rode `./install.sh` de novo a partir da pasta deste repositório.
+Apague a pasta do projeto (`~/Sites/<versao>`) e rode `./install.sh` de novo a partir da pasta deste repositório.
