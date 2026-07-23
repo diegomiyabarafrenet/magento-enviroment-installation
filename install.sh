@@ -108,7 +108,7 @@ VERSION=${VERSION:-$DEFAULT_VERSION}
 DOMAIN="dev.${VERSION}.com"
 PROJECT_DIR="$HOME/Sites/${VERSION}"
 
-ok "Vou instalar Magento ${EDITION} ${VERSION} em http://${DOMAIN}/"
+ok "Vou instalar Magento ${EDITION} ${VERSION} em https://${DOMAIN}/"
 
 # ---------------------------------------------------------------------------
 # 5. Checar se ja existe outro ambiente rodando nas portas 80/443
@@ -156,84 +156,22 @@ bin/download "$EDITION" "$VERSION"
 
 # ---------------------------------------------------------------------------
 # 7. Subir os containers e instalar o Magento (100% automatico)
-#    Nota: este passo pode pedir a senha do Linux (sudo) uma unica vez, para
-#    adicionar o dominio local no /etc/hosts. Isso e esperado.
+#    Nota: este passo pode pedir a senha do Linux (sudo) duas vezes -- para
+#    adicionar o dominio local no /etc/hosts e para instalar a autoridade
+#    certificadora local (mkcert) no WSL. Isso e esperado (normalmente so
+#    pede a senha uma vez, o sudo guarda ela em cache por alguns minutos).
 # ---------------------------------------------------------------------------
 echo
-info "Instalando o Magento (containers, banco, cache)..."
+info "Instalando o Magento (containers, banco, cache, certificado SSL local)..."
 bin/setup "$DOMAIN"
 
-# ---------------------------------------------------------------------------
-# 8. Deixar a loja em HTTP puro (sem SSL/HTTPS -- desnecessario para uma loja
-#    local). O bin/setup do docker-magento sempre configura HTTPS com um
-#    certificado local (mkcert) e a imagem de nginx redireciona toda porta 80
-#    para 443. Substituimos o server block de nginx por um compose.override.yaml
-#    (mecanismo de customizacao ja suportado pelo proprio docker-magento) que
-#    serve tudo direto em HTTP, sem redirecionamento nem certificado.
-# ---------------------------------------------------------------------------
 echo
-info "Configurando a loja para usar apenas HTTP (sem certificado SSL)..."
-cat > nginx-http.conf <<'NGINXCONF'
-upstream fastcgi_phpfpm {
-  server unix:/sock/phpfpm.sock;
-}
-
-upstream fastcgi_phpfpm_xdebug {
-  server unix:/sock/phpfpm-xdebug.sock;
-}
-
-map $cookie_XDEBUG_SESSION $fastcgi_backend {
-  default fastcgi_phpfpm;
-  PHPSTORM fastcgi_phpfpm_xdebug;
-}
-
-server {
-  listen [::]:8000;
-  listen 8000;
-
-  set $MAGE_ROOT /var/www/html;
-
-  fastcgi_buffer_size 64k;
-  fastcgi_buffers 8 128k;
-
-  location /livereload.js {
-    proxy_set_header Host $host;
-    proxy_pass http://phpfpm:35729/livereload.js;
-  }
-
-  location /livereload {
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "Upgrade";
-    proxy_pass http://phpfpm:35729/livereload;
-  }
-
-  include /var/www/html/nginx[.]conf;
-}
-NGINXCONF
-
-cat > compose.override.yaml <<'COMPOSEOVERRIDE'
-services:
-  app:
-    volumes:
-      - ./nginx-http.conf:/etc/nginx/conf.d/default.conf:cached
-COMPOSEOVERRIDE
-
-bin/restart
-
-echo "Ajustando URLs do Magento para HTTP..."
-bin/clinotty bin/magento config:set web/unsecure/base_url "http://${DOMAIN}/"
-bin/clinotty bin/magento config:set web/secure/base_url "http://${DOMAIN}/"
-bin/clinotty bin/magento config:set web/secure/use_in_frontend 0
-bin/clinotty bin/magento config:set web/secure/use_in_adminhtml 0
-
-echo "Desativando a autenticacao em duas etapas (2FA) do admin..."
+info "Desativando a autenticacao em duas etapas (2FA) do admin..."
 bin/clinotty bin/magento module:disable Magento_TwoFactorAuth Magento_AdminAdobeImsTwoFactorAuth
-
 bin/clinotty bin/magento cache:flush
 
 # ---------------------------------------------------------------------------
-# 9. Adicionar o dominio tambem no hosts do WINDOWS (nao so no do WSL)
+# 8. Adicionar o dominio tambem no hosts do WINDOWS (nao so no do WSL)
 #    O /etc/hosts que o bin/setup edita e o do WSL -- so vale para comandos
 #    rodados dentro do proprio WSL. O navegador roda no Windows e usa o hosts
 #    do Windows, que e um arquivo separado. O Docker Desktop ja encaminha as
@@ -257,6 +195,39 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 9. Confiar o certificado SSL local (mkcert) tambem no Windows
+#    O bin/setup ja instala a autoridade certificadora (CA) local no WSL, o
+#    que faz o certificado ser confiavel para comandos rodados dentro do
+#    proprio WSL (ex: curl). O navegador roda no Windows e usa o repositorio
+#    de certificados do Windows, que e separado -- sem esse passo, o
+#    navegador mostraria "conexao nao e particular" mesmo com tudo certo.
+# ---------------------------------------------------------------------------
+WSL_ROOT_CA="/usr/local/share/ca-certificates/rootCA.crt"
+if [ -f "$WSL_ROOT_CA" ] && grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then
+  echo
+  info "Confiando o certificado SSL local tambem no Windows..."
+  warn "Outra janela do Windows pode pedir permissao de administrador (UAC) -- clique em 'Sim'."
+  WIN_USER="$(powershell.exe -NoProfile -Command '$env:USERNAME' 2>/dev/null | tr -d '\r')"
+  WIN_TEMP_WSL="/mnt/c/Users/${WIN_USER}/AppData/Local/Temp"
+  CERT_FILENAME="docker-magento-rootCA-$(date +%s).crt"
+  if [ -n "$WIN_USER" ] && cp "$WSL_ROOT_CA" "${WIN_TEMP_WSL}/${CERT_FILENAME}" 2>/dev/null; then
+    PS_CERT_CMD="Import-Certificate -FilePath 'C:\\Users\\${WIN_USER}\\AppData\\Local\\Temp\\${CERT_FILENAME}' -CertStoreLocation Cert:\\LocalMachine\\Root"
+    ENCODED_CERT_CMD=$(printf '%s' "$PS_CERT_CMD" | iconv -t UTF-16LE | base64 -w0)
+    if powershell.exe -NoProfile -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile','-EncodedCommand','$ENCODED_CERT_CMD'" >/dev/null 2>&1; then
+      ok "Certificado confiavel no Windows tambem."
+    else
+      warn "Nao consegui confiar o certificado automaticamente no Windows."
+      warn "Veja a secao 'Certificado SSL nao confiavel' no README.md para o passo manual."
+    fi
+    rm -f "${WIN_TEMP_WSL}/${CERT_FILENAME}" 2>/dev/null
+  else
+    warn "Nao consegui copiar o certificado para o Windows. Veja a secao 'Certificado SSL nao confiavel' no README.md."
+  fi
+else
+  warn "Nao encontrei o certificado local ou o powershell.exe. Se o navegador mostrar aviso de certificado, veja o README.md."
+fi
+
+# ---------------------------------------------------------------------------
 # 10. Dados de exemplo (sample data) -- sempre "sim", sem perguntar
 # ---------------------------------------------------------------------------
 echo
@@ -275,8 +246,8 @@ ADMIN_PASSWORD="$(grep -m1 '^MAGENTO_ADMIN_PASSWORD=' env/magento.env | cut -d= 
 echo
 ok "Instalacao concluida!"
 echo
-echo "Loja:   http://${DOMAIN}/"
-echo "Admin:  http://${DOMAIN}/admin/"
+echo "Loja:   https://${DOMAIN}/"
+echo "Admin:  https://${DOMAIN}/admin/"
 echo "Usuario admin: ${ADMIN_USER}"
 echo "Senha admin:   ${ADMIN_PASSWORD}"
 echo

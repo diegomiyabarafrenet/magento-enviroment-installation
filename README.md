@@ -103,18 +103,22 @@ O script vai te pedir, na ordem, apenas estas informações (tudo o resto é aut
 2. **Geração de chave SSH** — o script cria uma chave SSH nova (se você ainda não tiver uma) e mostra a chave pública na tela. Copie essa chave e adicione em:
    👉 https://github.com/settings/keys → botão **"New SSH key"** → cole a chave → **Add SSH key**.
    Depois de adicionar, volte ao terminal e pressione **Enter** para o script continuar.
-3. **Versão do Magento** — edição (padrão: `community`) e versão (padrão: `2.4.8-p1`, mas você pode digitar outra, ex: `2.4.8`, `2.4.7-p3`, etc). O projeto é criado em `~/Sites/<versao>` (ex: `~/Sites/2.4.8-p1`) e o endereço da loja é gerado automaticamente a partir da versão, no formato `dev.<versao>.com` (ex: `http://dev.2.4.8-p1.com/`).
+3. **Versão do Magento** — edição (padrão: `community`) e versão (padrão: `2.4.8-p1`, mas você pode digitar outra, ex: `2.4.8`, `2.4.7-p3`, etc). O projeto é criado em `~/Sites/<versao>` (ex: `~/Sites/2.4.8-p1`) e o endereço da loja é gerado automaticamente a partir da versão, no formato `dev.<versao>.com` (ex: `https://dev.2.4.8-p1.com/`).
 4. **Chaves da Adobe Commerce Marketplace** — só na **primeira vez** que você instalar qualquer versão nesta máquina, o instalador do Magento vai pedir uma **Public key** e uma **Private key**. Veja a seção abaixo se você ainda não tem essas chaves. Em instalações seguintes (outras versões), isso não é pedido de novo — fica salvo automaticamente.
 
-Durante o processo, o Linux também pode pedir sua senha (`sudo`) uma vez, para adicionar o domínio local no arquivo `/etc/hosts` do WSL — isso é esperado, é só digitar a mesma senha do passo 1.1 (não aparece nada na tela enquanto digita).
+Durante o processo, o Linux também pode pedir sua senha (`sudo`) — normalmente só uma vez, o sudo guarda a senha em cache por alguns minutos — para adicionar o domínio local no arquivo `/etc/hosts` do WSL e para instalar a autoridade certificadora local (mkcert) no WSL. Isso é esperado, é só digitar a mesma senha do passo 1.1 (não aparece nada na tela enquanto digita).
 
-Logo em seguida, o script também tenta adicionar o mesmo domínio no **hosts do Windows** (arquivo separado do hosts do WSL — o navegador roda no Windows e só enxerga esse). Para isso, uma janela do Windows pode pedir permissão de administrador (**UAC**) — clique em **"Sim"**. Sem esse passo, o navegador não vai encontrar o site (erro `DNS_PROBE_FINISHED_NXDOMAIN`), mesmo com tudo instalado corretamente.
+Logo em seguida, o script tenta duas coisas no **Windows** (arquivos/repositórios separados dos do WSL, já que o navegador roda no Windows):
+- Adicionar o domínio no **hosts do Windows** (sem isso o navegador não encontraria o site — erro `DNS_PROBE_FINISHED_NXDOMAIN`).
+- Confiar o **certificado SSL local** (mkcert) também no Windows (sem isso o navegador mostraria aviso de "conexão não é particular").
 
-Depois disso, o script cuida sozinho de: baixar o Magento, subir os containers Docker, instalar o banco de dados, configurar cache, deixar a loja acessível em **HTTP puro** (sem HTTPS/certificado — desnecessário para uma loja local), desativar o **login em duas etapas (2FA)** do admin (senão você não conseguiria entrar sem configurar um app autenticador) e instalar dados de exemplo (produtos, categorias e clientes fictícios). Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
+Para cada uma dessas duas coisas, uma janela do Windows pode pedir permissão de administrador (**UAC**) — clique em **"Sim"** nas duas.
+
+Depois disso, o script cuida sozinho de: baixar o Magento, subir os containers Docker, instalar o banco de dados, configurar cache e SSL local, desativar o **login em duas etapas (2FA)** do admin (senão você não conseguiria entrar sem configurar um app autenticador) e instalar dados de exemplo (produtos, categorias e clientes fictícios). Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
 
 Ao final, o script mostra na tela o endereço da loja, do admin e as credenciais, e **deixa seu terminal já dentro da pasta do projeto** (`~/Sites/<versao>`), pronto para usar comandos como `bin/magento` sem precisar dar `cd` manualmente:
-- O endereço da loja (ex: `http://dev.2.4.8-p1.com/`)
-- O endereço do admin (ex: `http://dev.2.4.8-p1.com/admin/`)
+- O endereço da loja (ex: `https://dev.2.4.8-p1.com/`)
+- O endereço do admin (ex: `https://dev.2.4.8-p1.com/admin/`)
 - O usuário e senha de admin gerados (login simples, sem 2FA)
 
 ### 2.4. Como conseguir as chaves da Adobe Commerce Marketplace
@@ -165,6 +169,14 @@ O `install.sh` edita dois arquivos de hosts diferentes: o do WSL (usado só por 
 2. Arquivo → Abrir → digite `C:\Windows\System32\drivers\etc\hosts` (troque o filtro de tipo de arquivo para "Todos os arquivos").
 3. Adicione uma linha no final: `127.0.0.1 dev.<versao>.com` (ex: `127.0.0.1 dev.2.4.8-p1.com`).
 4. Salve e recarregue a página no navegador.
+
+**Navegador mostra aviso de certificado inseguro/não confiável ("A conexão não é particular")**
+O `install.sh` tenta confiar o certificado local automaticamente no Windows, mas se esse passo falhar (ou a janela de permissão de administrador tiver sido pulada), importe manualmente:
+1. Dentro do Ubuntu, rode `cat /usr/local/share/ca-certificates/rootCA.crt` e copie o conteúdo, ou copie o arquivo para o Windows (ele fica acessível em `\\wsl.localhost\Ubuntu-26.04\usr\local\share\ca-certificates\rootCA.crt`).
+2. No Windows, pressione `Win + R`, digite `certmgr.msc` e pressione Enter.
+3. Vá em **Autoridades de Certificação Raiz Confiáveis** → **Certificados** → botão direito → **Todas as tarefas** → **Importar**.
+4. Selecione o arquivo `rootCA.crt` copiado no passo 1 e conclua o assistente.
+5. Feche e reabra o navegador.
 
 **Depois de reiniciar o WSL/PC, o site para de abrir (domínio não resolve)**
 Tanto o `/etc/hosts` do WSL quanto (mais raramente) o hosts do Windows podem perder a entrada depois de reiniciar. No WSL, adicione de novo com:
