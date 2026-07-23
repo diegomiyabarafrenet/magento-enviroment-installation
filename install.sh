@@ -148,6 +148,12 @@ cd "$PROJECT_DIR"
 curl -s "$DOCKER_MAGENTO_TEMPLATE_URL" | bash
 
 echo
+info "Configurando locale pt_BR e moeda BRL..."
+sed -i 's/^MAGENTO_LOCALE=.*/MAGENTO_LOCALE=pt_BR/' env/magento.env
+sed -i 's/^MAGENTO_CURRENCY=.*/MAGENTO_CURRENCY=BRL/' env/magento.env
+sed -i 's/^MAGENTO_TIMEZONE=.*/MAGENTO_TIMEZONE=America\/Sao_Paulo/' env/magento.env
+
+echo
 info "Baixando o Magento ${EDITION} ${VERSION} via Composer..."
 warn "Na primeira instalacao nesta maquina, o instalador vai pedir suas chaves (Public key / Private key) da Adobe Commerce Marketplace."
 warn "Se voce ainda nao tem uma conta, veja o passo a passo no README.md deste repositorio (secao 'Adobe Commerce Marketplace')."

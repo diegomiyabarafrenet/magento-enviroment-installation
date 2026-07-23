@@ -114,7 +114,7 @@ Logo em seguida, o script tenta duas coisas no **Windows** (arquivos/repositóri
 
 Para cada uma dessas duas coisas, uma janela do Windows pode pedir permissão de administrador (**UAC**) — clique em **"Sim"** nas duas.
 
-Depois disso, o script cuida sozinho de: baixar o Magento, subir os containers Docker, instalar o banco de dados, configurar cache e SSL local, desativar o **login em duas etapas (2FA)** do admin (senão você não conseguiria entrar sem configurar um app autenticador) e instalar dados de exemplo (produtos, categorias e clientes fictícios). Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
+Depois disso, o script cuida sozinho de: baixar o Magento já configurado com **locale pt_BR, moeda BRL e fuso America/Sao_Paulo**, subir os containers Docker, instalar o banco de dados, configurar cache e SSL local, desativar o **login em duas etapas (2FA)** do admin (senão você não conseguiria entrar sem configurar um app autenticador) e instalar dados de exemplo (produtos, categorias e clientes fictícios). Isso pode levar de 10 a 30 minutos, dependendo da internet e do computador.
 
 Ao final, o script mostra na tela o endereço da loja, do admin e as credenciais, e **deixa seu terminal já dentro da pasta do projeto** (`~/Sites/<versao>`), pronto para usar comandos como `bin/magento` sem precisar dar `cd` manualmente:
 - O endereço da loja (ex: `https://dev.2.4.8-p1.com/`)
