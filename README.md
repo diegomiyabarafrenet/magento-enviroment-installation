@@ -77,18 +77,26 @@ sudo apt update && sudo apt install -y git
 
 ### 2.2. Baixar este repositório
 
-Como este repositório é privado, você precisa estar autenticado no GitHub para cloná-lo. Peça para o Diego adicionar seu usuário do GitHub como colaborador do repositório e escolha uma das opções:
+Como este repositório é privado, você precisa estar logado no GitHub (no navegador do Windows) e o Diego precisa ter adicionado seu usuário como colaborador do repositório. O jeito mais simples é baixar o ZIP pelo navegador (no Windows) e depois mover a pasta para dentro do Ubuntu.
 
-- **Opção A (recomendada, via HTTPS com token):** rode `git clone https://github.com/diegomiyabarafrenet/magento-enviroment-installation.git` e, quando pedir usuário/senha, use seu usuário do GitHub e um [Personal Access Token](https://github.com/settings/tokens) no lugar da senha.
-- **Opção B (via SSH):** se você já tem uma chave SSH cadastrada no GitHub, rode:
-  ```bash
-  git clone git@github.com:diegomiyabarafrenet/magento-enviroment-installation.git
-  ```
+1. **No Windows**, com o navegador já logado no GitHub, acesse:
+   👉 https://github.com/diegomiyabarafrenet/magento-enviroment-installation
+2. Clique no botão verde **"Code"** → **"Download ZIP"**. O arquivo `magento-enviroment-installation-main.zip` vai para a sua pasta **Downloads**.
+3. **Ainda no Windows**, extraia o ZIP: clique com o botão direito no arquivo baixado → **"Extrair Tudo..."** → **Extrair**. Isso cria a pasta `magento-enviroment-installation-main` dentro de Downloads.
+4. Descubra seu nome de usuário do Windows: abra o **Explorador de Arquivos** e veja o nome da pasta em `Este Computador → Disco Local (C:) → Users → <SEU_USUARIO>`.
+5. Volte para o terminal do **Ubuntu** (não o PowerShell) e mova a pasta extraída do Windows para dentro do Ubuntu com o comando abaixo — troque `<SEU_USUARIO>` pelo nome que você viu no passo 4:
+   ```bash
+   mkdir -p ~/Sites
+   mv "/mnt/c/Users/<SEU_USUARIO>/Downloads/magento-enviroment-installation-main" ~/Sites/magento-enviroment-installation
+   ```
+   > O Windows enxerga seus discos dentro do WSL em `/mnt/c/`, `/mnt/d/`, etc. Por isso o caminho começa com `/mnt/c/Users/...` — é o mesmo `C:\Users\...` do Windows, só que "traduzido" para o formato do Linux.
 
-Depois de clonar, entre na pasta:
+Depois de mover, entre na pasta (agora já dentro do Ubuntu):
 ```bash
-cd magento-enviroment-installation
+cd ~/Sites/magento-enviroment-installation
 ```
+
+> **Atualizações futuras:** como a pasta não é mais um clone Git (é só os arquivos extraídos do ZIP), para pegar uma versão mais nova deste repositório no futuro, repita os passos 1 a 5 baixando o ZIP de novo (pode apagar a pasta antiga antes com `rm -rf ~/Sites/magento-enviroment-installation`).
 
 ### 2.3. Rodar o instalador
 
@@ -171,12 +179,28 @@ O `install.sh` edita dois arquivos de hosts diferentes: o do WSL (usado só por 
 4. Salve e recarregue a página no navegador.
 
 **Navegador mostra aviso de certificado inseguro/não confiável ("A conexão não é particular")**
-O `install.sh` tenta confiar o certificado local automaticamente no Windows, mas se esse passo falhar (ou a janela de permissão de administrador tiver sido pulada), importe manualmente:
-1. Dentro do Ubuntu, rode `cat /usr/local/share/ca-certificates/rootCA.crt` e copie o conteúdo, ou copie o arquivo para o Windows (ele fica acessível em `\\wsl.localhost\Ubuntu-26.04\usr\local\share\ca-certificates\rootCA.crt`).
-2. No Windows, pressione `Win + R`, digite `certmgr.msc` e pressione Enter.
-3. Vá em **Autoridades de Certificação Raiz Confiáveis** → **Certificados** → botão direito → **Todas as tarefas** → **Importar**.
-4. Selecione o arquivo `rootCA.crt` copiado no passo 1 e conclua o assistente.
-5. Feche e reabra o navegador.
+
+O `install.sh` tenta confiar o certificado local automaticamente no Windows, mas se esse passo falhar (ou a janela de permissão de administrador tiver sido pulada), importe manualmente. **Atenção:** o mkcert (ferramenta usada pelo docker-magento para gerar o certificado local) nunca cria um arquivo chamado exatamente `rootCA.crt` — se você procurar por esse nome exato vai dar "arquivo não encontrado" mesmo o certificado tendo sido gerado normalmente. O arquivo real fica em `$(mkcert -CAROOT)/rootCA.pem` (por padrão `~/.local/share/mkcert/rootCA.pem`).
+
+1. Dentro do Ubuntu, descubra o caminho real do certificado:
+   ```bash
+   mkcert -CAROOT
+   ls "$(mkcert -CAROOT)"
+   ```
+   Você deve ver um arquivo `rootCA.pem` (e `rootCA-key.pem`) dentro dessa pasta. Se o comando `mkcert` não existir ou a pasta estiver vazia, veja o item **"O certificado realmente não foi gerado"** logo abaixo antes de continuar.
+2. Copie o conteúdo do certificado (`cat "$(mkcert -CAROOT)/rootCA.pem"`), ou copie o arquivo para o Windows. Ele fica acessível em `\\wsl.localhost\Ubuntu-26.04\home\<seu-usuario>\.local\share\mkcert\rootCA.pem` (troque `<seu-usuario>` pelo seu usuário do Linux).
+3. No Windows, pressione `Win + R`, digite `certmgr.msc` e pressione Enter.
+4. Vá em **Autoridades de Certificação Raiz Confiáveis** → **Certificados** → botão direito → **Todas as tarefas** → **Importar**.
+5. No seletor de arquivo, troque o filtro de tipo para "Todos os arquivos" e selecione o `rootCA.pem` copiado no passo 2 (o Windows importa normalmente mesmo com extensão `.pem`).
+6. Feche e reabra o navegador.
+
+**O certificado realmente não foi gerado (mkcert não existe / pasta vazia)**
+
+Se `mkcert -CAROOT` der erro de comando não encontrado, ou a pasta existir mas estiver vazia, o passo de SSL do `bin/setup` não rodou até o fim (geralmente por uma falha silenciosa de rede/sudo durante a instalação do mkcert). Para gerar o certificado manualmente:
+1. Entre na pasta do projeto (`cd ~/Sites/<versao>`, ex: `cd ~/Sites/2.4.8-p1`).
+2. Rode `bin/setup-ssl <dominio>` (ex: `bin/setup-ssl dev.2.4.8-p1.com`) — esse comando refaz só a parte de certificado SSL, sem reinstalar o Magento inteiro.
+3. Confirme que o certificado foi criado com `mkcert -CAROOT` e `ls "$(mkcert -CAROOT)"` (deve aparecer `rootCA.pem`).
+4. Repita os passos 2 a 6 da seção acima para importar no Windows.
 
 **Depois de reiniciar o WSL/PC, o site para de abrir (domínio não resolve)**
 Tanto o `/etc/hosts` do WSL quanto (mais raramente) o hosts do Windows podem perder a entrada depois de reiniciar. No WSL, adicione de novo com:
