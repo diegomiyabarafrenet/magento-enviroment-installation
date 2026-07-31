@@ -7,6 +7,12 @@
 # diferentes do Magento lado a lado (cada versao ganha sua propria pasta em
 # ~/Sites). Configuracoes ja feitas (git, chave SSH) nao sao pedidas de novo.
 #
+# RETOMAR APOS UMA FALHA: se o script morrer no meio (queda de rede,
+# instabilidade do Docker Desktop, etc.), rode "./install.sh" de novo e
+# responda com a MESMA versao -- ele detecta o que ja foi feito na pasta do
+# projeto e continua dali, em vez de recomecar do zero ou exigir que a pasta
+# seja apagada primeiro.
+#
 set -euo pipefail
 
 DOCKER_MAGENTO_TEMPLATE_URL="https://raw.githubusercontent.com/markshust/docker-magento/master/lib/template"
@@ -113,16 +119,31 @@ ok "Vou instalar Magento ${EDITION} ${VERSION} em https://${DOMAIN}/"
 # ---------------------------------------------------------------------------
 # 5. Checar se ja existe outro ambiente rodando nas portas 80/443
 #    (so um ambiente docker-magento pode ficar de pe por vez nessas portas,
-#    mesmo instalando varias versoes na mesma distro WSL)
+#    mesmo instalando varias versoes na mesma distro WSL). Se o que estiver
+#    rodando for o PROPRIO projeto que estamos retomando (mesma pasta), nao
+#    ha conflito de verdade -- so avisamos/pausamos quando for outro projeto.
 # ---------------------------------------------------------------------------
 RUNNING_ON_PORTS="$(docker ps --filter "publish=80" --filter "publish=443" --format '{{.Names}}' 2>/dev/null | sort -u || true)"
 if [ -n "$RUNNING_ON_PORTS" ]; then
-  echo
-  warn "Ja existe um ambiente Magento rodando e usando as portas 80/443:"
-  warn "$RUNNING_ON_PORTS"
-  warn "So um ambiente pode ficar ligado por vez nessas portas."
-  warn "Va na pasta do projeto antigo (~/Sites/<versao-antiga>) e rode 'bin/stop' antes de continuar."
-  read -r -p "Ja parou o ambiente antigo? Pressione Enter para continuar, ou Ctrl+C para cancelar... " _
+  SAME_PROJECT=0
+  while IFS= read -r cname; do
+    [ -z "$cname" ] && continue
+    WORKING_DIR="$(docker inspect "$cname" --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' 2>/dev/null || true)"
+    if [ "$WORKING_DIR" = "$PROJECT_DIR" ]; then
+      SAME_PROJECT=1
+    fi
+  done <<< "$RUNNING_ON_PORTS"
+
+  if [ "$SAME_PROJECT" -eq 1 ]; then
+    ok "O ambiente ja rodando nas portas 80/443 e este mesmo projeto (${PROJECT_DIR}), continuando normalmente."
+  else
+    echo
+    warn "Ja existe um ambiente Magento rodando e usando as portas 80/443:"
+    warn "$RUNNING_ON_PORTS"
+    warn "So um ambiente pode ficar ligado por vez nessas portas."
+    warn "Va na pasta do projeto antigo (~/Sites/<versao-antiga>) e rode 'bin/stop' antes de continuar."
+    read -r -p "Ja parou o ambiente antigo? Pressione Enter para continuar, ou Ctrl+C para cancelar... " _
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -134,18 +155,22 @@ fi
 #    Commerce Marketplace, que o proprio docker-magento faz em bin/download;
 #    esse prompt so aparece na primeira instalacao desta maquina, depois fica
 #    salvo globalmente em ~/.composer/auth.json e e reaproveitado sempre)
+#
+#    Cada sub-passo abaixo checa uma marca do que ja foi feito (em vez de so
+#    checar se a pasta existe) para que rodar o script de novo depois de uma
+#    falha continue dali, sem recomecar nem exigir apagar a pasta primeiro.
 # ---------------------------------------------------------------------------
 echo
-info "Criando o projeto em ${PROJECT_DIR}..."
 mkdir -p "$(dirname "$PROJECT_DIR")"
-
-if [ -d "$PROJECT_DIR" ]; then
-  die "A pasta ${PROJECT_DIR} ja existe. Remova-a ou escolha outra versao antes de rodar de novo."
-fi
-
 mkdir -p "$PROJECT_DIR"
 cd "$PROJECT_DIR"
-curl -s "$DOCKER_MAGENTO_TEMPLATE_URL" | bash
+
+if [ -f "bin/setup" ]; then
+  ok "Projeto ja existe em ${PROJECT_DIR}, retomando a instalacao dali..."
+else
+  info "Criando o projeto em ${PROJECT_DIR}..."
+  curl -s "$DOCKER_MAGENTO_TEMPLATE_URL" | bash
+fi
 
 echo
 info "Configurando locale pt_BR e moeda BRL..."
@@ -153,12 +178,16 @@ sed -i 's/^MAGENTO_LOCALE=.*/MAGENTO_LOCALE=pt_BR/' env/magento.env
 sed -i 's/^MAGENTO_CURRENCY=.*/MAGENTO_CURRENCY=BRL/' env/magento.env
 sed -i 's/^MAGENTO_TIMEZONE=.*/MAGENTO_TIMEZONE=America\/Sao_Paulo/' env/magento.env
 
-echo
-info "Baixando o Magento ${EDITION} ${VERSION} via Composer..."
-warn "Na primeira instalacao nesta maquina, o instalador vai pedir suas chaves (Public key / Private key) da Adobe Commerce Marketplace."
-warn "Se voce ainda nao tem uma conta, veja o passo a passo no README.md deste repositorio (secao 'Adobe Commerce Marketplace')."
-echo
-bin/download "$EDITION" "$VERSION"
+if [ -f "src/bin/magento" ]; then
+  ok "Magento ja foi baixado anteriormente nesta pasta, pulando o Composer."
+else
+  echo
+  info "Baixando o Magento ${EDITION} ${VERSION} via Composer..."
+  warn "Na primeira instalacao nesta maquina, o instalador vai pedir suas chaves (Public key / Private key) da Adobe Commerce Marketplace."
+  warn "Se voce ainda nao tem uma conta, veja o passo a passo no README.md deste repositorio (secao 'Adobe Commerce Marketplace')."
+  echo
+  bin/download "$EDITION" "$VERSION"
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Subir os containers e instalar o Magento (100% automatico)
@@ -166,10 +195,33 @@ bin/download "$EDITION" "$VERSION"
 #    adicionar o dominio local no /etc/hosts e para instalar a autoridade
 #    certificadora local (mkcert) no WSL. Isso e esperado (normalmente so
 #    pede a senha uma vez, o sudo guarda ela em cache por alguns minutos).
+#
+#    O Docker Desktop com WSL2 tem uma instabilidade conhecida ao criar os
+#    containers pela primeira vez (erro mencionando "mount"/"mountpoint...
+#    file exists"). Por isso tentamos ate 3 vezes, rodando "bin/restart"
+#    entre as tentativas, antes de desistir -- na maioria das vezes isso
+#    resolve sozinho, sem precisar de intervencao manual.
 # ---------------------------------------------------------------------------
 echo
 info "Instalando o Magento (containers, banco, cache, certificado SSL local)..."
-bin/setup "$DOMAIN"
+
+SETUP_OK=0
+for attempt in 1 2 3; do
+  if bin/setup "$DOMAIN"; then
+    SETUP_OK=1
+    break
+  fi
+  if [ "$attempt" -lt 3 ]; then
+    warn "bin/setup falhou (tentativa ${attempt}/3). Isso costuma ser a instabilidade conhecida do Docker Desktop com WSL2 ao criar os containers."
+    warn "Tentando recuperar com 'bin/restart' e rodando de novo..."
+    bin/restart || true
+    sleep 5
+  fi
+done
+
+if [ "$SETUP_OK" -ne 1 ]; then
+  die "bin/setup falhou apos 3 tentativas. Rode './install.sh' de novo (ele retoma a partir daqui) ou veja a secao 'Erro ao subir os containers' no README.md."
+fi
 
 echo
 info "Desativando a autenticacao em duas etapas (2FA) do admin..."

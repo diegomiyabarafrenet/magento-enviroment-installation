@@ -8,7 +8,7 @@ O processo tem 2 partes:
 - **Parte 1** é feita no Windows (PowerShell + Docker Desktop).
 - **Parte 2** é feita dentro do Ubuntu (que vai rodar dentro do Windows via WSL2), e é onde o script `install.sh` faz praticamente tudo sozinho.
 
-O `install.sh` pode ser rodado quantas vezes forem necessárias, mesmo depois de já ter uma versão do Magento instalada: ele **detecta sozinho** o que já está configurado (git, chave SSH, outro ambiente rodando nas portas 80/443) e pula essas etapas automaticamente, pedindo só o que ainda falta.
+O `install.sh` pode ser rodado quantas vezes forem necessárias, mesmo depois de já ter uma versão do Magento instalada: ele **detecta sozinho** o que já está configurado (git, chave SSH, outro ambiente rodando nas portas 80/443) e pula essas etapas automaticamente, pedindo só o que ainda falta. Isso vale também se o script **falhar no meio do processo** (queda de rede, instabilidade do Docker Desktop, etc.): rode `./install.sh` de novo e responda com a mesma versão — ele continua de onde parou, sem recomeçar do zero nem exigir apagar a pasta do projeto.
 
 ---
 
@@ -208,12 +208,21 @@ echo "127.0.0.1 ::1 dev.<versao>.com" | sudo tee -a /etc/hosts
 ```
 Se o navegador continuar sem encontrar o site, siga também o passo manual do Windows descrito no item acima.
 
-**Erro ao subir os containers mencionando "mount" ou "mountpoint" (grunt-config.json ou similar)**
-É uma instabilidade conhecida do Docker Desktop com WSL2 ao recriar containers. Normalmente resolve rodando de novo:
-```bash
-bin/restart
-```
-Se persistir, feche o Docker Desktop, abra de novo e tente uma vez mais.
+**Erro ao subir os containers mencionando "mount" ou "mountpoint" (`grunt-config.json`, `package.json` ou similar)**
+É uma instabilidade conhecida do Docker Desktop com WSL2 ao criar/recriar containers. O `install.sh` já tenta se recuperar sozinho disso (tenta de novo até 3 vezes, rodando `bin/restart` entre as tentativas) antes de desistir — na maioria das vezes não é preciso fazer nada manualmente, só esperar o script tentar de novo.
+
+Se ainda assim o script desistir depois das 3 tentativas:
+1. Feche o Docker Desktop completamente, abra de novo e espere a baleia parar de animar.
+2. Rode `./install.sh` de novo (ele retoma de onde parou, não precisa apagar nada).
+3. Se persistir, dentro da pasta do projeto rode manualmente:
+   ```bash
+   bin/stop
+   bin/docker-compose down
+   bin/start
+   ```
+   e depois `./install.sh` de novo.
+
+**Importante:** se o script morreu nessa etapa em uma tentativa anterior, é bem provável que a etapa de confiar o certificado no Windows (seção 9) nunca tenha rodado até o fim naquela vez — depois de conseguir passar do `bin/setup`, rode `./install.sh` mais uma vez para garantir que essa etapa seja (re)executada com o certificado atual.
 
 **Quero recomeçar do zero**
 Apague a pasta do projeto (`~/Sites/<versao>`) e rode `./install.sh` de novo a partir da pasta deste repositório.
