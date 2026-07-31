@@ -180,26 +180,25 @@ O `install.sh` edita dois arquivos de hosts diferentes: o do WSL (usado só por 
 
 **Navegador mostra aviso de certificado inseguro/não confiável ("A conexão não é particular")**
 
-O `install.sh` tenta confiar o certificado local automaticamente no Windows, mas se esse passo falhar (ou a janela de permissão de administrador tiver sido pulada), importe manualmente. **Atenção:** o mkcert (ferramenta usada pelo docker-magento para gerar o certificado local) nunca cria um arquivo chamado exatamente `rootCA.crt` — se você procurar por esse nome exato vai dar "arquivo não encontrado" mesmo o certificado tendo sido gerado normalmente. O arquivo real fica em `$(mkcert -CAROOT)/rootCA.pem` (por padrão `~/.local/share/mkcert/rootCA.pem`).
+O `install.sh` tenta confiar o certificado local automaticamente no Windows, mas se esse passo falhar (ou a janela de permissão de administrador tiver sido pulada), importe manualmente. O mkcert roda **dentro do container** da aplicação (não existe um binário `mkcert` no WSL) — o docker-magento copia o certificado de dentro do container e o salva em `/usr/local/share/ca-certificates/rootCA.crt` no WSL.
 
-1. Dentro do Ubuntu, descubra o caminho real do certificado:
+1. Confira se o arquivo existe:
    ```bash
-   mkcert -CAROOT
-   ls "$(mkcert -CAROOT)"
+   ls -la /usr/local/share/ca-certificates/rootCA.crt
    ```
-   Você deve ver um arquivo `rootCA.pem` (e `rootCA-key.pem`) dentro dessa pasta. Se o comando `mkcert` não existir ou a pasta estiver vazia, veja o item **"O certificado realmente não foi gerado"** logo abaixo antes de continuar.
-2. Copie o conteúdo do certificado (`cat "$(mkcert -CAROOT)/rootCA.pem"`), ou copie o arquivo para o Windows. Ele fica acessível em `\\wsl.localhost\Ubuntu-26.04\home\<seu-usuario>\.local\share\mkcert\rootCA.pem` (troque `<seu-usuario>` pelo seu usuário do Linux).
+   Se existir, siga para o passo 2. Se der "No such file or directory", veja o item **"O certificado realmente não foi gerado"** logo abaixo antes de continuar.
+2. Copie o conteúdo do certificado (`cat /usr/local/share/ca-certificates/rootCA.crt`), ou copie o arquivo para o Windows. Ele fica acessível em `\\wsl.localhost\Ubuntu-26.04\usr\local\share\ca-certificates\rootCA.crt`.
 3. No Windows, pressione `Win + R`, digite `certmgr.msc` e pressione Enter.
 4. Vá em **Autoridades de Certificação Raiz Confiáveis** → **Certificados** → botão direito → **Todas as tarefas** → **Importar**.
-5. No seletor de arquivo, troque o filtro de tipo para "Todos os arquivos" e selecione o `rootCA.pem` copiado no passo 2 (o Windows importa normalmente mesmo com extensão `.pem`).
+5. Selecione o arquivo `rootCA.crt` copiado no passo 2 e conclua o assistente.
 6. Feche e reabra o navegador.
 
-**O certificado realmente não foi gerado (mkcert não existe / pasta vazia)**
+**O certificado realmente não foi gerado (`rootCA.crt` não existe)**
 
-Se `mkcert -CAROOT` der erro de comando não encontrado, ou a pasta existir mas estiver vazia, o passo de SSL do `bin/setup` não rodou até o fim (geralmente por uma falha silenciosa de rede/sudo durante a instalação do mkcert). Para gerar o certificado manualmente:
+Isso acontece quando o passo `bin/setup-ssl-ca` (chamado internamente pelo `bin/setup`) não termina até o fim — ele faz `docker cp` do certificado de dentro do container e depois `sudo mv` para `/usr/local/share/ca-certificates/rootCA.crt`. Se o prompt de senha do `sudo` não for respondido a tempo (ou a sessão perder o terminal interativo nesse meio-tempo), o `mv` nunca roda e o arquivo nunca é criado. Para gerar manualmente:
 1. Entre na pasta do projeto (`cd ~/Sites/<versao>`, ex: `cd ~/Sites/2.4.8-p1`).
-2. Rode `bin/setup-ssl <dominio>` (ex: `bin/setup-ssl dev.2.4.8-p1.com`) — esse comando refaz só a parte de certificado SSL, sem reinstalar o Magento inteiro.
-3. Confirme que o certificado foi criado com `mkcert -CAROOT` e `ls "$(mkcert -CAROOT)"` (deve aparecer `rootCA.pem`).
+2. Rode `bin/setup-ssl <dominio>` (ex: `bin/setup-ssl dev.2.4.8-p1.com`) — esse comando refaz só a parte de certificado SSL, sem reinstalar o Magento inteiro. Ele vai pedir a senha do `sudo` de novo (digite a mesma senha do passo 1.1).
+3. Confirme que o certificado foi criado: `ls -la /usr/local/share/ca-certificates/rootCA.crt`.
 4. Repita os passos 2 a 6 da seção acima para importar no Windows.
 
 **Depois de reiniciar o WSL/PC, o site para de abrir (domínio não resolve)**

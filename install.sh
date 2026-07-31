@@ -208,37 +208,15 @@ fi
 #    de certificados do Windows, que e separado -- sem esse passo, o
 #    navegador mostraria "conexao nao e particular" mesmo com tudo certo.
 #
-#    Nota: o mkcert NUNCA grava um arquivo chamado "rootCA.crt". O arquivo
-#    real fica em "$(mkcert -CAROOT)/rootCA.pem" (ex: ~/.local/share/mkcert).
-#    A copia que o mkcert instala em /usr/local/share/ca-certificates/ (para
-#    o proprio WSL confiar) leva um nome com hash, tipo
-#    "mkcert_development_CA_xxxxxxxx.crt" -- por isso procurar por um arquivo
-#    fixo "rootCA.crt" nunca encontra nada, mesmo com o certificado gerado.
+#    Nota: o mkcert roda DENTRO do container "app" (nao no host WSL). O
+#    bin/setup-ssl-ca do docker-magento faz "docker cp" do rootCA.pem de
+#    dentro do container e roda "sudo mv rootCA.pem
+#    /usr/local/share/ca-certificates/rootCA.crt" -- entao esse caminho fixo
+#    e o correto e so deve faltar aqui se aquele "sudo mv" nao rodou (ex:
+#    prompt de senha do sudo que nao foi respondido a tempo).
 # ---------------------------------------------------------------------------
-find_mkcert_root_ca() {
-  if command -v mkcert >/dev/null 2>&1; then
-    local caroot
-    caroot="$(mkcert -CAROOT 2>/dev/null || true)"
-    if [ -n "$caroot" ] && [ -f "$caroot/rootCA.pem" ]; then
-      echo "$caroot/rootCA.pem"
-      return 0
-    fi
-  fi
-  if [ -f "$HOME/.local/share/mkcert/rootCA.pem" ]; then
-    echo "$HOME/.local/share/mkcert/rootCA.pem"
-    return 0
-  fi
-  local sys_ca
-  sys_ca="$(ls /usr/local/share/ca-certificates/mkcert_development_CA_*.crt 2>/dev/null | head -n1 || true)"
-  if [ -n "$sys_ca" ]; then
-    echo "$sys_ca"
-    return 0
-  fi
-  return 1
-}
-
-WSL_ROOT_CA="$(find_mkcert_root_ca || true)"
-if [ -n "$WSL_ROOT_CA" ] && grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then
+WSL_ROOT_CA="/usr/local/share/ca-certificates/rootCA.crt"
+if [ -f "$WSL_ROOT_CA" ] && grep -qi microsoft /proc/version 2>/dev/null && command -v powershell.exe >/dev/null 2>&1; then
   echo
   info "Confiando o certificado SSL local tambem no Windows..."
   warn "Outra janela do Windows pode pedir permissao de administrador (UAC) -- clique em 'Sim'."
@@ -258,8 +236,8 @@ if [ -n "$WSL_ROOT_CA" ] && grep -qi microsoft /proc/version 2>/dev/null && comm
   else
     warn "Nao consegui copiar o certificado para o Windows. Veja a secao 'Certificado SSL nao confiavel' no README.md."
   fi
-elif [ -z "$WSL_ROOT_CA" ]; then
-  warn "Nao encontrei o certificado raiz do mkcert (rootCA.pem). O 'bin/setup' pode nao ter instalado o mkcert corretamente."
+elif [ ! -f "$WSL_ROOT_CA" ]; then
+  warn "Nao encontrei ${WSL_ROOT_CA}. O passo de SSL do bin/setup pode ter falhado (ex: prompt do sudo nao respondido)."
   warn "Veja a secao 'Certificado SSL nao confiavel' no README.md para gerar/localizar o certificado manualmente."
 else
   warn "Nao encontrei o powershell.exe. Se estiver no Windows, veja o README.md para o passo manual de certificado."
