@@ -202,6 +202,14 @@ sed -i 's/^MAGENTO_TIMEZONE=.*/MAGENTO_TIMEZONE=America\/Sao_Paulo/' env/magento
 if [ -f "src/bin/magento" ]; then
   ok "Magento ja foi baixado anteriormente nesta pasta, pulando o Composer."
 else
+  # O bin/download do docker-magento se recusa a rodar se "src/" ja existir,
+  # mesmo vazia -- se chegamos aqui, o download nunca terminou (senao
+  # src/bin/magento existiria), entao qualquer "src/" deixada por uma
+  # tentativa anterior interrompida e seguro remover antes de tentar de novo.
+  if [ -d "src" ]; then
+    warn "Pasta 'src' incompleta de uma tentativa anterior encontrada, removendo antes de baixar de novo..."
+    rm -rf src
+  fi
   echo
   info "Baixando o Magento ${EDITION} ${VERSION} via Composer..."
   warn "Na primeira instalacao nesta maquina, o instalador vai pedir suas chaves (Public key / Private key) da Adobe Commerce Marketplace."
