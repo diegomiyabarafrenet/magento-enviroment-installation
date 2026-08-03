@@ -19,6 +19,14 @@ DOCKER_MAGENTO_TEMPLATE_URL="https://raw.githubusercontent.com/markshust/docker-
 DEFAULT_EDITION="community"
 DEFAULT_VERSION="2.4.8-p1"
 
+# Endereco de origem padrao para calculo de frete (Stores > Configuration >
+# Sales > Shipping Settings > Origin). Ajuste aqui se o endereco mudar.
+SHIPPING_ORIGIN_COUNTRY="BR"
+SHIPPING_ORIGIN_REGION_CODE="PR"
+SHIPPING_ORIGIN_POSTCODE="80010030"
+SHIPPING_ORIGIN_CITY="Curitiba"
+SHIPPING_ORIGIN_STREET="Av Rui Barbosa, 123"
+
 color() { printf '\033[%sm%s\033[0m\n' "$1" "$2"; }
 info()  { color "0;34" "==> $1"; }
 warn()  { color "0;33" "!!  $1"; }
@@ -269,6 +277,31 @@ fi
 echo
 info "Desativando a autenticacao em duas etapas (2FA) do admin..."
 bin/clinotty bin/magento module:disable Magento_TwoFactorAuth Magento_AdminAdobeImsTwoFactorAuth
+bin/clinotty bin/magento cache:flush
+
+# ---------------------------------------------------------------------------
+# 7c. Configurar endereco de origem para calculo de frete
+#     (Stores > Configuration > Sales > Shipping Settings > Origin).
+#     O region_id e numerico e depende da tabela directory_country_region do
+#     banco -- em vez de arriscar um numero errado, buscamos o ID certo pelo
+#     "code" (sigla do estado, ex: PR), que nao depende de acento/encoding.
+# ---------------------------------------------------------------------------
+echo
+info "Configurando endereco de origem em Shipping Settings..."
+DB_USER="$(grep -m1 '^MYSQL_USER=' env/db.env 2>/dev/null | cut -d= -f2)"
+DB_PASSWORD="$(grep -m1 '^MYSQL_PASSWORD=' env/db.env 2>/dev/null | cut -d= -f2)"
+DB_NAME="$(grep -m1 '^MYSQL_DATABASE=' env/db.env 2>/dev/null | cut -d= -f2)"
+SHIPPING_REGION_ID="$(bin/docker-compose exec -T db mysql -u "${DB_USER:-magento}" -p"${DB_PASSWORD:-magento}" "${DB_NAME:-magento}" -N -e "SELECT region_id FROM directory_country_region WHERE country_id='${SHIPPING_ORIGIN_COUNTRY}' AND code='${SHIPPING_ORIGIN_REGION_CODE}' LIMIT 1" 2>/dev/null | tr -d '\r')"
+
+bin/clinotty bin/magento config:set shipping/origin/country_id "$SHIPPING_ORIGIN_COUNTRY"
+if [ -n "$SHIPPING_REGION_ID" ]; then
+  bin/clinotty bin/magento config:set shipping/origin/region_id "$SHIPPING_REGION_ID"
+else
+  warn "Nao encontrei o region_id para '${SHIPPING_ORIGIN_REGION_CODE}' no banco -- configure Region/State manualmente em Stores > Configuration > Sales > Shipping Settings."
+fi
+bin/clinotty bin/magento config:set shipping/origin/postcode "$SHIPPING_ORIGIN_POSTCODE"
+bin/clinotty bin/magento config:set shipping/origin/city "$SHIPPING_ORIGIN_CITY"
+bin/clinotty bin/magento config:set shipping/origin/street_line1 "$SHIPPING_ORIGIN_STREET"
 bin/clinotty bin/magento cache:flush
 
 # ---------------------------------------------------------------------------
