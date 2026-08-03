@@ -299,7 +299,20 @@ info "Configurando endereco de origem em Shipping Settings..."
 DB_USER="$(grep -m1 '^MYSQL_USER=' env/db.env 2>/dev/null | cut -d= -f2)"
 DB_PASSWORD="$(grep -m1 '^MYSQL_PASSWORD=' env/db.env 2>/dev/null | cut -d= -f2)"
 DB_NAME="$(grep -m1 '^MYSQL_DATABASE=' env/db.env 2>/dev/null | cut -d= -f2)"
-SHIPPING_REGION_ID="$(bin/docker-compose exec -T db mysql -u "${DB_USER:-magento}" -p"${DB_PASSWORD:-magento}" "${DB_NAME:-magento}" -N -e "SELECT region_id FROM directory_country_region WHERE country_id='${SHIPPING_ORIGIN_COUNTRY}' AND code='${SHIPPING_ORIGIN_REGION_CODE}' LIMIT 1" 2>/dev/null | tr -d '\r')"
+# A imagem do container "db" pode trazer o cliente como "mysql" ou "mariadb"
+# (nomes diferentes conforme a versao/imagem) -- detecta qual existe antes de
+# usar, em vez de assumir "mysql" (que causava "executable file not found" e,
+# por sair do exec com erro, deixava a mensagem de erro (nao um numero) dentro
+# de SHIPPING_REGION_ID e derrubava o script mais adiante).
+DB_CLIENT="$(bin/docker-compose exec -T db sh -c 'command -v mysql || command -v mariadb' 2>/dev/null | tr -d '\r')"
+DB_CLIENT="$(basename "${DB_CLIENT:-mysql}")"
+SHIPPING_REGION_ID="$(bin/docker-compose exec -T db "$DB_CLIENT" -u "${DB_USER:-magento}" -p"${DB_PASSWORD:-magento}" "${DB_NAME:-magento}" -N -e "SELECT region_id FROM directory_country_region WHERE country_id='${SHIPPING_ORIGIN_COUNTRY}' AND code='${SHIPPING_ORIGIN_REGION_CODE}' LIMIT 1" 2>/dev/null | tr -d '\r')"
+# So confia no resultado se for puramente numerico -- qualquer mensagem de
+# erro que escape para o stdout (em vez do stderr) fica descartada aqui, em
+# vez de ser usada como se fosse o region_id.
+if ! [[ "$SHIPPING_REGION_ID" =~ ^[0-9]+$ ]]; then
+  SHIPPING_REGION_ID=""
+fi
 
 bin/clinotty bin/magento config:set shipping/origin/country_id "$SHIPPING_ORIGIN_COUNTRY"
 if [ -n "$SHIPPING_REGION_ID" ]; then
