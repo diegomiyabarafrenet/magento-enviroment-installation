@@ -230,7 +230,19 @@ echo
 if [ -f "src/app/etc/env.php" ]; then
   ok "Magento ja esta instalado nesta pasta -- pulando bin/setup (ele apagaria e reinstalaria tudo do zero)."
   info "Garantindo que os containers estao de pe..."
-  bin/start --no-dev
+  # Sem --no-dev de proposito: esse flag pula o compose.dev.yaml, onde ficam
+  # servicos de desenvolvimento (ex: phpmyadmin) -- usa-lo aqui faria o
+  # "--remove-orphans" do bin/start remover esses containers por engano.
+  bin/start
+
+  # A geracao/confianca do certificado SSL local (mkcert) vive dentro do
+  # bin/setup (via bin/setup-ssl -> bin/setup-ssl-ca), que estamos pulando de
+  # proposito aqui. Por isso chamamos bin/setup-ssl separadamente -- ele so
+  # mexe no certificado (gera se faltar, renova se o dominio mudou), nao
+  # reinstala nada do Magento.
+  info "Garantindo que o certificado SSL local existe e esta atualizado..."
+  bin/setup-ssl "$DOMAIN"
+
   SETUP_OK=1
 else
   info "Instalando o Magento (containers, banco, cache, certificado SSL local)..."
