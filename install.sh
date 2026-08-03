@@ -214,23 +214,41 @@ fi
 #    file exists"). Por isso tentamos ate 3 vezes, rodando "bin/restart"
 #    entre as tentativas, antes de desistir -- na maioria das vezes isso
 #    resolve sozinho, sem precisar de intervencao manual.
+#
+#    IMPORTANTE: bin/setup NAO e seguro de rodar de novo num ambiente ja
+#    instalado -- ele faz "rm -rf src" (apaga todo o codigo do Magento) e
+#    reinstala tudo do zero via bin/setup-install (recriando o banco de
+#    dados). Por isso so chamamos bin/setup quando o Magento AINDA NAO foi
+#    instalado nesta pasta, checado pela ausencia de src/app/etc/env.php --
+#    o arquivo que o proprio Magento cria ao terminar a instalacao e que so
+#    existe se ela realmente tiver concluido. Se ja existir, so garantimos
+#    que os containers estao de pe (bin/start, que apenas sobe os containers
+#    e nao apaga nada) e seguimos direto para as proximas etapas (2FA, hosts,
+#    certificado).
 # ---------------------------------------------------------------------------
 echo
-info "Instalando o Magento (containers, banco, cache, certificado SSL local)..."
+if [ -f "src/app/etc/env.php" ]; then
+  ok "Magento ja esta instalado nesta pasta -- pulando bin/setup (ele apagaria e reinstalaria tudo do zero)."
+  info "Garantindo que os containers estao de pe..."
+  bin/start --no-dev
+  SETUP_OK=1
+else
+  info "Instalando o Magento (containers, banco, cache, certificado SSL local)..."
 
-SETUP_OK=0
-for attempt in 1 2 3; do
-  if bin/setup "$DOMAIN"; then
-    SETUP_OK=1
-    break
-  fi
-  if [ "$attempt" -lt 3 ]; then
-    warn "bin/setup falhou (tentativa ${attempt}/3). Isso costuma ser a instabilidade conhecida do Docker Desktop com WSL2 ao criar os containers."
-    warn "Tentando recuperar com 'bin/restart' e rodando de novo..."
-    bin/restart || true
-    sleep 5
-  fi
-done
+  SETUP_OK=0
+  for attempt in 1 2 3; do
+    if bin/setup "$DOMAIN"; then
+      SETUP_OK=1
+      break
+    fi
+    if [ "$attempt" -lt 3 ]; then
+      warn "bin/setup falhou (tentativa ${attempt}/3). Isso costuma ser a instabilidade conhecida do Docker Desktop com WSL2 ao criar os containers."
+      warn "Tentando recuperar com 'bin/restart' e rodando de novo..."
+      bin/restart || true
+      sleep 5
+    fi
+  done
+fi
 
 if [ "$SETUP_OK" -ne 1 ]; then
   die "bin/setup falhou apos 3 tentativas. Rode './install.sh' de novo (ele retoma a partir daqui) ou veja a secao 'Erro ao subir os containers' no README.md."
