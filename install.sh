@@ -36,6 +36,19 @@ fi
 
 command -v git >/dev/null 2>&1 || die "git nao encontrado. Rode: sudo apt update && sudo apt install -y git"
 
+# O bin/setup-ssl-ca do docker-magento (chamado dentro do bin/setup) tem um bug
+# em distros novas: ele checa se o libnss3-tools esta instalado com
+# "dpkg-query | grep", mas sem o pacote instalado o grep nao acha nada, retorna
+# erro, e como aquele script usa "set -e" sem "pipefail" ele morre ali mesmo --
+# antes de sequer tentar instalar o pacote sozinho. Isso faz a autoridade
+# certificadora (CA) do mkcert nunca ser instalada no host (WSL), mesmo o
+# certificado do site sendo gerado normalmente dentro do container. Instalando
+# o pacote aqui de antemao evitamos cair nesse bug.
+if ! dpkg -s libnss3-tools >/dev/null 2>&1; then
+  info "Instalando libnss3-tools (necessario para o certificado SSL local funcionar)..."
+  sudo apt-get update -qq && sudo apt-get install -y libnss3-tools
+fi
+
 if ! docker info >/dev/null 2>&1; then
   die "Nao consegui falar com o Docker. Abra o Docker Desktop no Windows, espere ele iniciar completamente e rode este script de novo."
 fi

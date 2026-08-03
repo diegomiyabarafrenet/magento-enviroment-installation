@@ -195,11 +195,20 @@ O `install.sh` tenta confiar o certificado local automaticamente no Windows, mas
 
 **O certificado realmente não foi gerado (`rootCA.crt` não existe)**
 
-Isso acontece quando o passo `bin/setup-ssl-ca` (chamado internamente pelo `bin/setup`) não termina até o fim — ele faz `docker cp` do certificado de dentro do container e depois `sudo mv` para `/usr/local/share/ca-certificates/rootCA.crt`. Se o prompt de senha do `sudo` não for respondido a tempo (ou a sessão perder o terminal interativo nesse meio-tempo), o `mv` nunca roda e o arquivo nunca é criado. Para gerar manualmente:
+Isso acontece quando o passo `bin/setup-ssl-ca` (chamado internamente pelo `bin/setup`) não termina até o fim. Duas causas comuns:
+
+- **Falta o pacote `libnss3-tools` (comum em distro WSL nova/recém-instalada).** O `bin/setup-ssl-ca` checa se esse pacote está instalado com um comando que, em distros novas onde ele ainda não existe, faz o script morrer silenciosamente **antes mesmo de tentar instalá-lo** — por isso não aparece nenhum erro visível, ele só para no meio. O `install.sh` já instala esse pacote automaticamente como pré-requisito antes de chamar `bin/setup`, então isso só deve acontecer se você estiver rodando os comandos `bin/*` manualmente, fora do `install.sh`. Se acontecer, instale manualmente e rode nosso passo de novo:
+  ```bash
+  sudo apt-get update
+  sudo apt-get install -y libnss3-tools
+  ```
+- **O prompt de senha do `sudo mv` não foi respondido a tempo** (ou a sessão perdeu o terminal interativo nesse meio-tempo).
+
+Para gerar o certificado manualmente depois de resolver a causa:
 1. Entre na pasta do projeto (`cd ~/Sites/<versao>`, ex: `cd ~/Sites/2.4.8-p1`).
-2. Rode `bin/setup-ssl <dominio>` (ex: `bin/setup-ssl dev.2.4.8-p1.com`) — esse comando refaz só a parte de certificado SSL, sem reinstalar o Magento inteiro. Ele vai pedir a senha do `sudo` de novo (digite a mesma senha do passo 1.1).
+2. Rode `bin/setup-ssl-ca` — ele vai pedir a senha do `sudo` (digite a mesma senha do passo 1.1).
 3. Confirme que o certificado foi criado: `ls -la /usr/local/share/ca-certificates/rootCA.crt`.
-4. Repita os passos 2 a 6 da seção acima para importar no Windows.
+4. Rode `./install.sh` de novo (na pasta deste repositório, respondendo com a mesma versão) para ele reconhecer o certificado e importar no Windows — ou repita os passos 2 a 6 da seção acima para importar manualmente.
 
 **Depois de reiniciar o WSL/PC, o site para de abrir (domínio não resolve)**
 Tanto o `/etc/hosts` do WSL quanto (mais raramente) o hosts do Windows podem perder a entrada depois de reiniciar. No WSL, adicione de novo com:
