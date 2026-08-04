@@ -288,6 +288,50 @@ bin/clinotty bin/magento module:disable Magento_TwoFactorAuth Magento_AdminAdobe
 bin/clinotty bin/magento cache:flush
 
 # ---------------------------------------------------------------------------
+# Detectar credenciais e cliente SQL do container "db", reaproveitado pelas
+# etapas 7b e 7c abaixo. A imagem do container pode trazer o cliente como
+# "mysql" ou "mariadb" (nomes diferentes conforme a versao/imagem) -- detecta
+# qual existe antes de usar, em vez de assumir "mysql" (o que causava
+# "executable file not found" e, por sair do exec com erro, deixava a
+# mensagem de erro -- nao um numero/valor -- dentro da variavel usada depois,
+# derrubando o script mais adiante).
+# ---------------------------------------------------------------------------
+DB_USER="$(grep -m1 '^MYSQL_USER=' env/db.env 2>/dev/null | cut -d= -f2)"
+DB_PASSWORD="$(grep -m1 '^MYSQL_PASSWORD=' env/db.env 2>/dev/null | cut -d= -f2)"
+DB_NAME="$(grep -m1 '^MYSQL_DATABASE=' env/db.env 2>/dev/null | cut -d= -f2)"
+DB_CLIENT="$(bin/docker-compose exec -T db sh -c 'command -v mysql || command -v mariadb' 2>/dev/null | tr -d '\r')"
+DB_CLIENT="$(basename "${DB_CLIENT:-mysql}")"
+db_query() {
+  bin/docker-compose exec -T db "$DB_CLIENT" -u "${DB_USER:-magento}" -p"${DB_PASSWORD:-magento}" "${DB_NAME:-magento}" -N -e "$1" 2>/dev/null | tr -d '\r'
+}
+
+# ---------------------------------------------------------------------------
+# 7b. Instalar o pacote de idioma Portugues (Brasil)
+#     MAGENTO_LOCALE=pt_BR (configurado acima) so ajusta o formato de
+#     data/numero/moeda -- sozinho isso NAO traduz o painel/loja, porque o
+#     Magento nao vem com o dicionario de traducao pt_BR por padrao. Sem o
+#     pacote magento/language-pt_br instalado, o texto da interface continua
+#     em ingles mesmo com o locale certo. Roda tanto numa instalacao nova
+#     quanto ao retomar um ambiente ja instalado que ainda nao tinha isso.
+#
+#     Alem disso, o idioma do PAINEL depende do campo "interface_locale" de
+#     cada usuario admin, nao so do locale geral da loja -- setup:install nem
+#     sempre propaga isso para o usuario criado, entao forcamos aqui tambem.
+# ---------------------------------------------------------------------------
+if [ -d "src/vendor/magento/language-pt_br" ]; then
+  ok "Pacote de idioma pt_BR ja instalado."
+else
+  echo
+  info "Instalando o pacote de idioma Portugues (Brasil)..."
+  bin/clinotty composer require magento/language-pt_br
+  bin/clinotty bin/magento setup:upgrade
+  bin/clinotty bin/magento cache:flush
+fi
+
+info "Configurando o idioma do painel admin para Portugues (Brasil)..."
+db_query "UPDATE admin_user SET interface_locale = 'pt_BR'" >/dev/null
+
+# ---------------------------------------------------------------------------
 # 7c. Configurar endereco de origem para calculo de frete
 #     (Stores > Configuration > Sales > Shipping Settings > Origin).
 #     O region_id e numerico e depende da tabela directory_country_region do
@@ -296,17 +340,7 @@ bin/clinotty bin/magento cache:flush
 # ---------------------------------------------------------------------------
 echo
 info "Configurando endereco de origem em Shipping Settings..."
-DB_USER="$(grep -m1 '^MYSQL_USER=' env/db.env 2>/dev/null | cut -d= -f2)"
-DB_PASSWORD="$(grep -m1 '^MYSQL_PASSWORD=' env/db.env 2>/dev/null | cut -d= -f2)"
-DB_NAME="$(grep -m1 '^MYSQL_DATABASE=' env/db.env 2>/dev/null | cut -d= -f2)"
-# A imagem do container "db" pode trazer o cliente como "mysql" ou "mariadb"
-# (nomes diferentes conforme a versao/imagem) -- detecta qual existe antes de
-# usar, em vez de assumir "mysql" (que causava "executable file not found" e,
-# por sair do exec com erro, deixava a mensagem de erro (nao um numero) dentro
-# de SHIPPING_REGION_ID e derrubava o script mais adiante).
-DB_CLIENT="$(bin/docker-compose exec -T db sh -c 'command -v mysql || command -v mariadb' 2>/dev/null | tr -d '\r')"
-DB_CLIENT="$(basename "${DB_CLIENT:-mysql}")"
-SHIPPING_REGION_ID="$(bin/docker-compose exec -T db "$DB_CLIENT" -u "${DB_USER:-magento}" -p"${DB_PASSWORD:-magento}" "${DB_NAME:-magento}" -N -e "SELECT region_id FROM directory_country_region WHERE country_id='${SHIPPING_ORIGIN_COUNTRY}' AND code='${SHIPPING_ORIGIN_REGION_CODE}' LIMIT 1" 2>/dev/null | tr -d '\r')"
+SHIPPING_REGION_ID="$(db_query "SELECT region_id FROM directory_country_region WHERE country_id='${SHIPPING_ORIGIN_COUNTRY}' AND code='${SHIPPING_ORIGIN_REGION_CODE}' LIMIT 1")"
 # So confia no resultado se for puramente numerico -- qualquer mensagem de
 # erro que escape para o stdout (em vez do stderr) fica descartada aqui, em
 # vez de ser usada como se fosse o region_id.
